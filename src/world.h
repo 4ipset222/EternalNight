@@ -9,8 +9,8 @@ public:
     World(int loadRadiusChunks, int seed);
     ~World();
 
-    void Update(float dt, int isNight, float focusX, float focusY, float playerX, float playerY, float playerRadius, float* ioPlayerHP);
-    void Draw(const Camera2D& camera, int screenW, int screenH) const;
+    void Update(float dt, int isNight, float focusX, float focusY, float playerX, float playerY, float playerRadius, float* ioPlayerHP, bool updateMobs);
+    void Draw(const Camera2D& camera, int screenW, int screenH, bool drawMobs) const;
 
     float GetTileSize() const { return tileSize; }
     ForgeWorld* GetRaw() const { return forgeWorld; }

@@ -13,7 +13,7 @@ World::~World()
     World_Destroy(forgeWorld);
 }
 
-void World::Update(float dt, int isNight, float focusX, float focusY, float playerX, float playerY, float playerRadius, float* ioPlayerHP)
+void World::Update(float dt, int isNight, float focusX, float focusY, float playerX, float playerY, float playerRadius, float* ioPlayerHP, bool updateMobs)
 {
     int camTileX = (int)floorf(focusX / tileSize);
     int camTileY = (int)floorf(focusY / tileSize);
@@ -27,10 +27,11 @@ void World::Update(float dt, int isNight, float focusX, float focusY, float play
         : (camTileY - CHUNK_SIZE + 1) / CHUNK_SIZE;
 
     World_UpdateChunks(forgeWorld, centerChunkX, centerChunkY);
-    World_UpdateMobs(forgeWorld, dt, isNight, playerX, playerY, playerRadius, ioPlayerHP);
+    if (updateMobs)
+        World_UpdateMobs(forgeWorld, dt, isNight, playerX, playerY, playerRadius, ioPlayerHP);
 }
 
-void World::Draw(const Camera2D& camera, int screenW, int screenH) const
+void World::Draw(const Camera2D& camera, int screenW, int screenH, bool drawMobs) const
 {
     int tilesXStart = (int)floorf(camera.x / tileSize);
     int tilesYStart = (int)floorf(camera.y / tileSize);
@@ -96,23 +97,26 @@ void World::Draw(const Camera2D& camera, int screenW, int screenH) const
         (int)(triPos.size() / 2)
     );
 
-    int mobCount = 0;
-    const Mob* mobs = World_GetMobs(forgeWorld, &mobCount);
-    int typeCount = 0;
-    const MobArchetype* types = World_GetMobArchetypes(forgeWorld, &typeCount);
-    if (mobs && types)
+    if (drawMobs)
     {
-        for (int i = 0; i < mobCount; i++)
+        int mobCount = 0;
+        const Mob* mobs = World_GetMobs(forgeWorld, &mobCount);
+        int typeCount = 0;
+        const MobArchetype* types = World_GetMobArchetypes(forgeWorld, &typeCount);
+        if (mobs && types)
         {
-            const Mob& mob = mobs[i];
-            if (mob.type < 0 || mob.type >= typeCount)
-                continue;
-            const MobArchetype& arch = types[mob.type];
+            for (int i = 0; i < mobCount; i++)
+            {
+                const Mob& mob = mobs[i];
+                if (mob.type < 0 || mob.type >= typeCount)
+                    continue;
+                const MobArchetype& arch = types[mob.type];
 
-            DrawRectangle(
-                Rect{ mob.x - arch.size * 0.5f, mob.y - arch.size * 0.5f, arch.size, arch.size },
-                Color{ arch.color.x, arch.color.y, arch.color.z, arch.color.w }
-            );
+                DrawRectangle(
+                    Rect{ mob.x - arch.size * 0.5f, mob.y - arch.size * 0.5f, arch.size, arch.size },
+                    Color{ arch.color.x, arch.color.y, arch.color.z, arch.color.w }
+                );
+            }
         }
     }
 }

@@ -1302,9 +1302,9 @@ static Font* GetDefaultFont(void)
     return g_default_font;
 }
 
-void DrawText(const char* text, float x, float y, float fontSize, Color color)
+void Renderer_DrawText(const char* text, float x, float y, float fontSize, Color color)
 {
-    DrawTextEx(text, x, y, fontSize, color, TEXT_STYLE_NORMAL);
+    Renderer_DrawTextEx(text, x, y, fontSize, color, TEXT_STYLE_NORMAL);
 }
 
 static void DrawTextPass(const char* text, float x, float y, float fontSize, Color color)
@@ -1432,7 +1432,7 @@ static void DrawTextPass(const char* text, float x, float y, float fontSize, Col
     free(verts);
 }
 
-void DrawTextEx(const char* text, float x, float y, float fontSize, Color color, TextStyle style)
+void Renderer_DrawTextEx(const char* text, float x, float y, float fontSize, Color color, TextStyle style)
 {
     if (!text)
     {

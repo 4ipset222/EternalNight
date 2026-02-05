@@ -108,8 +108,8 @@ void DrawTexturePro(Texture2D texture, Rect source, Rect dest, Vec2 origin, floa
 Font* LoadFontTTF(const char* path, int pixel_size);
 void  UnloadFont(Font* font);
 void  SetDefaultFont(Font* font);
-void  DrawText(const char* text, float x, float y, float fontSize, Color color);
-void  DrawTextEx(const char* text, float x, float y, float fontSize, Color color, TextStyle style);
+void  Renderer_DrawText(const char* text, float x, float y, float fontSize, Color color);
+void  Renderer_DrawTextEx(const char* text, float x, float y, float fontSize, Color color, TextStyle style);
 
 #ifdef __cplusplus
 }

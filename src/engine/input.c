@@ -9,6 +9,8 @@ static bool previousMouse[MOUSE_BUTTON_COUNT];
 
 static int mouseX, mouseY;
 
+static char textInput[64];
+static int textInputLen = 0;
 
 static KeyCode SDLKeyToKeyCode(SDL_Keycode key)
 {
@@ -137,12 +139,19 @@ void Input_Init(void)
 
     memset(currentMouse, 0, sizeof(currentMouse));
     memset(previousMouse, 0, sizeof(previousMouse));
+
+    textInputLen = 0;
+    textInput[0] = '\0';
+    SDL_StartTextInput();
 }
 
 void Input_Update(void)
 {
     memcpy(previousKeys, currentKeys, sizeof(currentKeys));
     memcpy(previousMouse, currentMouse, sizeof(currentMouse));
+
+    textInputLen = 0;
+    textInput[0] = '\0';
 }
 
 void Input_ProcessEvent(const SDL_Event* e)
@@ -195,6 +204,17 @@ void Input_ProcessEvent(const SDL_Event* e)
             mouseX = e->motion.x;
             mouseY = e->motion.y;
             break;
+
+        case SDL_TEXTINPUT:
+        {
+            const char* src = e->text.text;
+            while (*src && textInputLen < (int)sizeof(textInput) - 1)
+            {
+                textInput[textInputLen++] = *src++;
+            }
+            textInput[textInputLen] = '\0';
+            break;
+        }
     }
 }
 
@@ -230,3 +250,6 @@ bool Input_IsMouseReleased(MouseButton button)
 
 int Input_GetMouseX(void) { return mouseX; }
 int Input_GetMouseY(void) { return mouseY; }
+
+const char* Input_GetTextInput(void) { return textInput; }
+int Input_GetTextInputLen(void) { return textInputLen; }

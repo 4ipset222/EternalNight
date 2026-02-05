@@ -33,7 +33,7 @@ void Player::Draw() const
 {
     DrawRectangle(
         Rect{ x - size / 2.0f, y - size / 2.0f, size, size },
-        Color{1.0f, 0.0f, 0.0f, 1.0f}
+        color
     );
 
     if (isAttacking && weaponSprite)
@@ -74,7 +74,7 @@ void Player::DrawHP() const
     float xPos = renderer->width - barWidth - margin;
     float yPos = renderer->height - barHeight - margin;
 
-    DrawText("HP", xPos - 30.0f, yPos + 2.0f, 14, Color{1,1,1,1});
+    Renderer_DrawText("HP", xPos - 30.0f, yPos + 2.0f, 14, Color{1,1,1,1});
     DrawRectangle(Rect{xPos, yPos, barWidth, barHeight}, Color{0.2f, 0.2f, 0.2f, 1.0f});
     DrawRectangle(Rect{xPos, yPos, filledWidth, barHeight}, Color{1.0f, 0.0f, 0.0f, 1.0f});
     DrawRectangleLines(Rect{xPos, yPos, barWidth, barHeight}, 2.0f, Color{1.0f, 1.0f, 1.0f, 1.0f});
@@ -98,4 +98,13 @@ bool Player::Attack(float dirX, float dirY)
     attackProgress = 0.0f;
     isAttacking = true;
     return true;
+}
+
+void Player::SetAttackState(bool attacking, float progress, float dirX, float dirY, float baseAngle)
+{
+    isAttacking = attacking;
+    attackProgress = progress;
+    attackDirX = dirX;
+    attackDirY = dirY;
+    attackBaseAngle = baseAngle;
 }

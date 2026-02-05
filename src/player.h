@@ -13,6 +13,9 @@ public:
     void DrawHP() const;
     bool Attack(float dirX, float dirY);
     void SetWeaponSprite(Texture2D* sprite) { weaponSprite = sprite; }
+    void SetPosition(float nx, float ny) { x = nx; y = ny; }
+    void SetAttackState(bool attacking, float progress, float dirX, float dirY, float baseAngle);
+    void SetColor(Color c) { color = c; }
 
     float GetX() const { return x; }
     float GetY() const { return y; }
@@ -48,6 +51,8 @@ private:
     float attackBaseAngle = 0.0f;
     float attackSwingArc = 1.4f;
     float attackSpriteAngleOffset = 0.0f;
+
+    Color color = {1.0f, 0.0f, 0.0f, 1.0f};
 };
 
 #endif // __PLAYER_H__

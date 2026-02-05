@@ -68,7 +68,7 @@ void Inventory::Draw(float startX, float startY, float slotSize)
             {
                 char buffer[256];
                 snprintf(buffer, sizeof(buffer), "Selected: %s", slots[i].used ? slots[i].name.c_str() : "Empty");
-                DrawText(buffer, startX, startY - 20, 14, Color{1, 1, 1, 1});
+                Renderer_DrawText(buffer, startX, startY - 20, 14, Color{1, 1, 1, 1});
             }
         }
     }
