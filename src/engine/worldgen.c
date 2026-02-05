@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
+#include <math.h>
 #include <omp.h>
 
 #define NUM_THREADS 4
@@ -61,6 +62,202 @@ static int World_InsertChunk(ForgeWorld* world, int cx, int cy, Chunk* chunk)
     return 0;
 }
 
+static unsigned int World_Rand(ForgeWorld* world)
+{
+    world->rngState = world->rngState * 1664525u + 1013904223u;
+    return world->rngState;
+}
+
+static float World_Rand01(ForgeWorld* world)
+{
+    return (float)(World_Rand(world) & 0x00FFFFFFu) / (float)0x01000000u;
+}
+
+int World_RegisterMobType(ForgeWorld* world, const MobArchetype* archetype)
+{
+    if (!world || !archetype || !world->mobTypes)
+        return -1;
+    if (world->mobTypeCount >= WORLD_MAX_MOB_TYPES)
+        return -1;
+
+    int id = world->mobTypeCount++;
+    world->mobTypes[id] = *archetype;
+    world->mobTypes[id].name[sizeof(world->mobTypes[id].name) - 1] = '\0';
+    return id;
+}
+
+int World_SpawnMob(ForgeWorld* world, int type, float x, float y)
+{
+    if (!world || !world->mobs)
+        return 0;
+    if (type < 0 || type >= world->mobTypeCount)
+        return 0;
+    if (world->mobCount >= world->mobCapacity)
+        return 0;
+
+    Mob* mob = &world->mobs[world->mobCount++];
+    mob->type = type;
+    mob->x = x;
+    mob->y = y;
+    mob->vx = 0.0f;
+    mob->vy = 0.0f;
+    mob->attackTimer = 0.0f;
+    mob->hp = world->mobTypes[type].maxHP;
+    return 1;
+}
+
+void World_UpdateMobs(ForgeWorld* world, float dt, int isNight, float playerX, float playerY, float playerRadius, float* ioPlayerHP)
+{
+    if (!world || !world->mobs || world->mobTypeCount <= 0)
+        return;
+
+    const int desiredCount = 12;
+    const float spawnCooldown = 4.0f;
+    const float spawnMinRadius = 220.0f;
+    const float spawnMaxRadius = 420.0f;
+    const float despawnRadius = 700.0f;
+
+    if (world->mobSpawnCooldown > 0.0f)
+        world->mobSpawnCooldown -= dt;
+
+    if (!isNight)
+    {
+        world->mobSpawnCooldown = spawnCooldown;
+    }
+
+    if (isNight && world->mobCount < desiredCount && world->mobSpawnCooldown <= 0.0f)
+    {
+        float angle = World_Rand01(world) * 6.2831853f;
+        float radius = spawnMinRadius + World_Rand01(world) * (spawnMaxRadius - spawnMinRadius);
+        float sx = playerX + cosf(angle) * radius;
+        float sy = playerY + sinf(angle) * radius;
+
+        int type = (int)(World_Rand01(world) * (float)world->mobTypeCount);
+        if (type < 0) type = 0;
+        if (type >= world->mobTypeCount) type = world->mobTypeCount - 1;
+
+        World_SpawnMob(world, type, sx, sy);
+        world->mobSpawnCooldown = spawnCooldown;
+    }
+
+    for (int i = 0; i < world->mobCount; i++)
+    {
+        Mob* mob = &world->mobs[i];
+        const MobArchetype* arch = &world->mobTypes[mob->type];
+
+        if (mob->attackTimer > 0.0f)
+            mob->attackTimer -= dt;
+
+        float dx = playerX - mob->x;
+        float dy = playerY - mob->y;
+        float distSq = dx * dx + dy * dy;
+        if (distSq > despawnRadius * despawnRadius)
+        {
+            world->mobs[i] = world->mobs[world->mobCount - 1];
+            world->mobCount--;
+            i--;
+            continue;
+        }
+
+        float aggro = arch->aggroRange;
+        if (distSq <= aggro * aggro)
+        {
+            float dist = sqrtf(distSq);
+            if (dist > 0.001f)
+            {
+                float nx = dx / dist;
+                float ny = dy / dist;
+                float stopDist = (arch->size * 0.5f) + playerRadius;
+                if (dist > stopDist)
+                {
+                    mob->x += nx * arch->speed * dt;
+                    mob->y += ny * arch->speed * dt;
+                }
+                else
+                {
+                    mob->x = playerX - nx * stopDist;
+                    mob->y = playerY - ny * stopDist;
+                }
+            }
+        }
+
+        float attackRange = arch->attackRange + playerRadius;
+        if (distSq <= attackRange * attackRange)
+        {
+            if (mob->attackTimer <= 0.0f && ioPlayerHP)
+            {
+                float hp = *ioPlayerHP - arch->attackDamage;
+                *ioPlayerHP = hp < 0.0f ? 0.0f : hp;
+                mob->attackTimer = arch->attackCooldown;
+            }
+        }
+    }
+}
+
+const Mob* World_GetMobs(const ForgeWorld* world, int* outCount)
+{
+    if (outCount)
+        *outCount = world ? world->mobCount : 0;
+    return world ? world->mobs : NULL;
+}
+
+const MobArchetype* World_GetMobArchetypes(const ForgeWorld* world, int* outCount)
+{
+    if (outCount)
+        *outCount = world ? world->mobTypeCount : 0;
+    return world ? world->mobTypes : NULL;
+}
+
+int World_PlayerAttack(ForgeWorld* world, float originX, float originY, float dirX, float dirY, float range, float arcCos, float damage)
+{
+    if (!world || !world->mobs || world->mobCount <= 0)
+        return 0;
+
+    float dirLenSq = dirX * dirX + dirY * dirY;
+    if (dirLenSq < 0.0001f)
+        return 0;
+
+    float invLen = 1.0f / sqrtf(dirLenSq);
+    dirX *= invLen;
+    dirY *= invLen;
+
+    int hits = 0;
+    for (int i = 0; i < world->mobCount; i++)
+    {
+        Mob* mob = &world->mobs[i];
+        const MobArchetype* arch = &world->mobTypes[mob->type];
+
+        float dx = mob->x - originX;
+        float dy = mob->y - originY;
+        float distSq = dx * dx + dy * dy;
+        float radius = (arch->size * 0.5f);
+        float maxDist = range + radius;
+        if (distSq > maxDist * maxDist)
+            continue;
+
+        float dist = sqrtf(distSq);
+        if (dist > 0.001f)
+        {
+            float ndx = dx / dist;
+            float ndy = dy / dist;
+            float dot = ndx * dirX + ndy * dirY;
+            if (dot < arcCos)
+                continue;
+        }
+
+        mob->hp -= damage;
+        hits++;
+        if (mob->hp <= 0.0f)
+        {
+            world->mobs[i] = world->mobs[world->mobCount - 1];
+            world->mobCount--;
+            i--;
+        }
+    }
+
+    return hits;
+}
+
 void Chunk_Generate(Chunk* chunk, int seed)
 {
     Perlin_Init(seed);
@@ -115,11 +312,34 @@ ForgeWorld* World_Create(int loadRadiusChunks, int seed)
     world->chunkCapacity = WORLD_CHUNK_CAPACITY;
     world->chunkCount = 0;
     world->chunkMap = calloc(world->chunkCapacity, sizeof(*world->chunkMap));
-    if (!world->chunkMap)
+    world->rngState = (unsigned int)(seed * 747796405u + 2891336453u);
+    world->mobTypes = calloc(WORLD_MAX_MOB_TYPES, sizeof(*world->mobTypes));
+    world->mobTypeCount = 0;
+    world->mobs = calloc(WORLD_DEFAULT_MOB_CAPACITY, sizeof(*world->mobs));
+    world->mobCount = 0;
+    world->mobCapacity = WORLD_DEFAULT_MOB_CAPACITY;
+    world->mobSpawnCooldown = 0.0f;
+    if (!world->chunkMap || !world->mobTypes || !world->mobs)
     {
+        free(world->mobs);
+        free(world->mobTypes);
+        free(world->chunkMap);
         free(world);
         return NULL;
     }
+
+    MobArchetype orange = {0};
+    strncpy(orange.name, "orange_rect", sizeof(orange.name) - 1);
+    orange.size = 18.0f;
+    orange.speed = 70.0f;
+    orange.color = (Vec4){1.0f, 0.5f, 0.0f, 1.0f};
+    orange.aggroRange = 220.0f;
+    orange.attackRange = 12.0f;
+    orange.attackDamage = 5.0f;
+    orange.attackCooldown = 0.8f;
+    orange.maxHP = 20.0f;
+    World_RegisterMobType(world, &orange);
+
     return world;
 }
 
@@ -136,6 +356,8 @@ void World_Destroy(ForgeWorld* world)
             }
             free(world->chunkMap);
         }
+        free(world->mobs);
+        free(world->mobTypes);
         free(world);
     }
 }

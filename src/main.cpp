@@ -19,15 +19,17 @@ int main(int argc, char** argv)
 
     Inventory inventory;
     Texture2D* itemSprite = LoadTexture("test.png");
-    inventory.AddItem("fimoz", Color{1,0,0,1}, itemSprite);
-    inventory.AddItem("giga fimoz", Color{0,1,0,1}, itemSprite);
+    Texture2D* swordSprite = LoadTexture("kuzne4ik_sword.png");
+    inventory.AddItem("fimoz", Color{1,0,0,1}, itemSprite, ITEM_MISC);
+    inventory.AddItem("giga fimoz", Color{0,1,0,1}, itemSprite, ITEM_MISC);
+    inventory.AddItem("kuzne4ik sword", Color{1,1,1,1}, swordSprite, ITEM_WEAPON);
 
     bool showDebug = false;
     bool prevF3 = false;
 
     float fogRadius = 200.0f;
     float fogStrength = 0.0f;
-    const float DAY_DURATION = 300.0f;
+    const float DAY_DURATION = 5.0f;
     const float NIGHT_DURATION = 180.0f;
     const float NIGHT_FADE = 10.0f;
     bool isNight = false;
@@ -50,7 +52,35 @@ int main(int argc, char** argv)
         if (Input_IsKeyDown(KEY_E)) camera.zoom -= 0.5f * dt;
         camera.zoom = std::clamp(camera.zoom, 0.1f, 5.0f);
 
-        world.Update(player.GetX(), player.GetY());
+        Item* selected = inventory.GetSelectedItem();
+        Texture2D* weaponSprite = (selected && selected->type == ITEM_WEAPON) ? selected->sprite : nullptr;
+        player.SetWeaponSprite(weaponSprite);
+
+        if (weaponSprite && Input_IsMousePressed(MOUSE_LEFT))
+        {
+            float mx = (float)Input_GetMouseX();
+            float my = (float)Input_GetMouseY();
+            float worldMx = camera.x + mx / camera.zoom;
+            float worldMy = camera.y + my / camera.zoom;
+            float dirX = worldMx - player.GetX();
+            float dirY = worldMy - player.GetY();
+
+            if (player.Attack(dirX, dirY))
+            {
+                World_PlayerAttack(
+                    world.GetRaw(),
+                    player.GetX(), player.GetY(),
+                    dirX, dirY,
+                    player.GetAttackRange(),
+                    player.GetAttackArcCos(),
+                    player.GetAttackDamage()
+                );
+            }
+        }
+
+        float playerHP = player.GetHP();
+        world.Update(dt, isNight ? 1 : 0, player.GetX(), player.GetY(), player.GetX(), player.GetY(), player.GetSize(), &playerHP);
+        player.SetHP(playerHP);
 
         bool f3 = Input_IsKeyDown(KEY_F3);
         if (f3 && !prevF3)
@@ -170,7 +200,7 @@ int main(int argc, char** argv)
 
             DrawTextEx(dbg, 10, 10, 16, Color{1, 1, 0, 1}, TEXT_STYLE_OUTLINE_SHADOW);
 
-            DrawTextEx(" Q/E - zoom\n F3 - debug info\n WASD - move\n 1-5 - select hotbar\n Esc - toggle inventory", (float)renderer->width - 140, 10, 14, Color{1, 1, 1, 1}, TEXT_STYLE_OUTLINE_SHADOW);
+            DrawTextEx(" Q/E - zoom\n F3 - debug info\n WASD - move\n 1-5 - select hotbar\n Esc - toggle inventory\n LMB - attack(sword)", (float)renderer->width - 140, 10, 14, Color{1, 1, 1, 1}, TEXT_STYLE_OUTLINE_SHADOW);
         }
 
         inventory.Draw(10.0f, (float)renderer->height - 50.0f, 32.0f);

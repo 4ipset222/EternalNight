@@ -10,7 +10,7 @@ Inventory::Inventory()
         slots[i].used = false;
 }
 
-bool Inventory::AddItem(const std::string& name, Color color, Texture2D* sprite)
+bool Inventory::AddItem(const std::string& name, Color color, Texture2D* sprite, ItemType type)
 {
     for (int i = 0; i < MAX_SLOTS; i++)
     {
@@ -19,6 +19,7 @@ bool Inventory::AddItem(const std::string& name, Color color, Texture2D* sprite)
             slots[i].name = name;
             slots[i].color = color;
             slots[i].sprite = sprite;
+            slots[i].type = type;
             slots[i].used = true;
             return true;
         }

@@ -4,11 +4,18 @@
 #include "engine/forge.h"
 #include <string>
 
+enum ItemType
+{
+    ITEM_MISC = 0,
+    ITEM_WEAPON = 1
+};
+
 struct Item
 {
     std::string name;
     Color color;
     Texture2D* sprite = nullptr;
+    ItemType type = ITEM_MISC;
     bool used = false;
 };
 
@@ -20,7 +27,7 @@ public:
 
     Inventory();
 
-    bool AddItem(const std::string& name, Color color, Texture2D* sprite = nullptr);
+    bool AddItem(const std::string& name, Color color, Texture2D* sprite = nullptr, ItemType type = ITEM_MISC);
     void RemoveItem(int index);
     void Draw(float startX, float startY, float slotSize = 32.0f);
 

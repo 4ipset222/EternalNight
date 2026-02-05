@@ -13,7 +13,7 @@ World::~World()
     World_Destroy(forgeWorld);
 }
 
-void World::Update(float focusX, float focusY)
+void World::Update(float dt, int isNight, float focusX, float focusY, float playerX, float playerY, float playerRadius, float* ioPlayerHP)
 {
     int camTileX = (int)floorf(focusX / tileSize);
     int camTileY = (int)floorf(focusY / tileSize);
@@ -27,6 +27,7 @@ void World::Update(float focusX, float focusY)
         : (camTileY - CHUNK_SIZE + 1) / CHUNK_SIZE;
 
     World_UpdateChunks(forgeWorld, centerChunkX, centerChunkY);
+    World_UpdateMobs(forgeWorld, dt, isNight, playerX, playerY, playerRadius, ioPlayerHP);
 }
 
 void World::Draw(const Camera2D& camera, int screenW, int screenH) const
@@ -66,7 +67,8 @@ void World::Draw(const Camera2D& camera, int screenW, int screenH) const
             float x1 = x0 + tileSize;
             float y1 = y0 + tileSize;
 
-            float pos[] = {
+            float pos[] =
+            {
                 x0, y0,
                 x1, y0,
                 x1, y1,
@@ -93,4 +95,24 @@ void World::Draw(const Camera2D& camera, int screenW, int screenH) const
         triCol.data(),
         (int)(triPos.size() / 2)
     );
+
+    int mobCount = 0;
+    const Mob* mobs = World_GetMobs(forgeWorld, &mobCount);
+    int typeCount = 0;
+    const MobArchetype* types = World_GetMobArchetypes(forgeWorld, &typeCount);
+    if (mobs && types)
+    {
+        for (int i = 0; i < mobCount; i++)
+        {
+            const Mob& mob = mobs[i];
+            if (mob.type < 0 || mob.type >= typeCount)
+                continue;
+            const MobArchetype& arch = types[mob.type];
+
+            DrawRectangle(
+                Rect{ mob.x - arch.size * 0.5f, mob.y - arch.size * 0.5f, arch.size, arch.size },
+                Color{ arch.color.x, arch.color.y, arch.color.z, arch.color.w }
+            );
+        }
+    }
 }

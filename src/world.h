@@ -9,7 +9,7 @@ public:
     World(int loadRadiusChunks, int seed);
     ~World();
 
-    void Update(float focusX, float focusY);
+    void Update(float dt, int isNight, float focusX, float focusY, float playerX, float playerY, float playerRadius, float* ioPlayerHP);
     void Draw(const Camera2D& camera, int screenW, int screenH) const;
 
     float GetTileSize() const { return tileSize; }

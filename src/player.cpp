@@ -1,6 +1,5 @@
 #include "player.h"
-#include "engine/forge.h"
-
+#include <math.h>
 
 Player::Player(float x, float y)
     : x(x), y(y), speed(200.0f), size(16.0f)
@@ -13,6 +12,21 @@ void Player::Update(float dt)
     if (Input_IsKeyDown(KEY_S)) y += speed * dt;
     if (Input_IsKeyDown(KEY_A)) x -= speed * dt;
     if (Input_IsKeyDown(KEY_D)) x += speed * dt;
+
+    if (attackTimer > 0.0f)
+        attackTimer -= dt;
+    if (attackCooldownTimer > 0.0f)
+        attackCooldownTimer -= dt;
+
+    if (isAttacking)
+    {
+        attackProgress += dt / attackDuration;
+        if (attackProgress >= 1.0f)
+        {
+            attackProgress = 1.0f;
+            isAttacking = false;
+        }
+    }
 }
 
 void Player::Draw() const
@@ -21,6 +35,28 @@ void Player::Draw() const
         Rect{ x - size / 2.0f, y - size / 2.0f, size, size },
         Color{1.0f, 0.0f, 0.0f, 1.0f}
     );
+
+    if (isAttacking && weaponSprite)
+    {
+        float t = attackProgress;
+        t = t * t * (3.0f - 2.0f * t);
+        float swingAngle = attackBaseAngle - attackSwingArc * 0.5f + attackSwingArc * t;
+        float angleRad = swingAngle + attackSpriteAngleOffset;
+
+        float drawW = (float)weaponSprite->width;
+        float drawH = (float)weaponSprite->height;
+        float maxDim = (drawW > drawH) ? drawW : drawH;
+        float targetLength = size * 1.9f;
+        float scale = targetLength / maxDim;
+        Rect src = { 0, 0, drawW, drawH };
+        float reach = size * 0.55f;
+        float sx = x + attackDirX * reach;
+        float sy = y + attackDirY * reach;
+        Rect dst = { sx, sy, drawW * scale, drawH * scale };
+        Vec2 origin = { (drawW * scale) * 0.15f, (drawH * scale) * 0.5f };
+
+        DrawTexturePro(*weaponSprite, src, dst, origin, angleRad, Color{1, 1, 1, 1});
+    }
 }
 
 void Player::DrawHP() const
@@ -42,4 +78,24 @@ void Player::DrawHP() const
     DrawRectangle(Rect{xPos, yPos, barWidth, barHeight}, Color{0.2f, 0.2f, 0.2f, 1.0f});
     DrawRectangle(Rect{xPos, yPos, filledWidth, barHeight}, Color{1.0f, 0.0f, 0.0f, 1.0f});
     DrawRectangleLines(Rect{xPos, yPos, barWidth, barHeight}, 2.0f, Color{1.0f, 1.0f, 1.0f, 1.0f});
+}
+
+bool Player::Attack(float dirX, float dirY)
+{
+    if (attackCooldownTimer > 0.0f)
+        return false;
+
+    float lenSq = dirX * dirX + dirY * dirY;
+    if (lenSq < 0.0001f)
+        return false;
+
+    float invLen = 1.0f / sqrtf(lenSq);
+    attackDirX = dirX * invLen;
+    attackDirY = dirY * invLen;
+    attackBaseAngle = atan2f(attackDirY, attackDirX);
+    attackTimer = attackDuration;
+    attackCooldownTimer = attackCooldown;
+    attackProgress = 0.0f;
+    isAttacking = true;
+    return true;
 }
