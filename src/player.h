@@ -30,7 +30,7 @@ private:
     float speed;
     float size;
 
-    float hp = 75.0f;
+    float hp = 100.0f;
     float maxHP = 100.0f;
 
     Texture2D* weaponSprite = nullptr;

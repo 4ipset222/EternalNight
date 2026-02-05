@@ -90,7 +90,7 @@ void World::Draw(const Camera2D& camera, int screenW, int screenH) const
         }
     }
 
-    DrawTrianglesColored(
+    Renderer_DrawTrianglesColored(
         triPos.data(),
         triCol.data(),
         (int)(triPos.size() / 2)
@@ -109,7 +109,7 @@ void World::Draw(const Camera2D& camera, int screenW, int screenH) const
                 continue;
             const MobArchetype& arch = types[mob.type];
 
-            DrawRectangle(
+            Renderer_DrawRectangle(
                 Rect{ mob.x - arch.size * 0.5f, mob.y - arch.size * 0.5f, arch.size, arch.size },
                 Color{ arch.color.x, arch.color.y, arch.color.z, arch.color.w }
             );

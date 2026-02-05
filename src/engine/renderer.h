@@ -86,30 +86,30 @@ void Renderer_EndFrame(Renderer* r);
 
 void Renderer_Clear(Color color);
 
-void DrawRectangle(Rect rect, Color color);
-void DrawRectangleLines(Rect rect, int line_thick, Color color);
+void Renderer_DrawRectangle(Rect rect, Color color);
+void Renderer_DrawRectangleLines(Rect rect, int line_thick, Color color);
 
-void DrawTrianglesColored(const float* positions, const float* colors, int vertexCount);
+void Renderer_DrawTrianglesColored(const float* positions, const float* colors, int vertexCount);
 
-void DrawCircle(Vec2 center, float radius, Color color);
-void DrawCircleLines(Vec2 center, float radius, Color color);
+void Renderer_DrawCircle(Vec2 center, float radius, Color color);
+void Renderer_DrawCircleLines(Vec2 center, float radius, Color color);
 
-void DrawLine(Vec2 start, Vec2 end, Color color);
-void DrawLineEx(Vec2 start, Vec2 end, float thick, Color color);
+void Renderer_DrawLine(Vec2 start, Vec2 end, Color color);
+void Renderer_DrawLineEx(Vec2 start, Vec2 end, float thick, Color color);
 
-void DrawTriangle(Vec2 v1, Vec2 v2, Vec2 v3, Color color);
-void DrawTriangleLines(Vec2 v1, Vec2 v2, Vec2 v3, Color color);
+void Renderer_DrawTriangle(Vec2 v1, Vec2 v2, Vec2 v3, Color color);
+void Renderer_DrawTriangleLines(Vec2 v1, Vec2 v2, Vec2 v3, Color color);
 
-void DrawTexture(Texture2D texture, Vec2 position, Color tint);
-void DrawTextureRec(Texture2D texture, Rect source, Vec2 position, Color tint);
-void DrawTextureEx(Texture2D texture, Vec2 position, float rotation, float scale, Color tint);
-void DrawTexturePro(Texture2D texture, Rect source, Rect dest, Vec2 origin, float rotation, Color tint);
+void Renderer_DrawTexture(Texture2D texture, Vec2 position, Color tint);
+void Renderer_DrawTextureRec(Texture2D texture, Rect source, Vec2 position, Color tint);
+void Renderer_DrawTextureEx(Texture2D texture, Vec2 position, float rotation, float scale, Color tint);
+void Renderer_DrawTexturePro(Texture2D texture, Rect source, Rect dest, Vec2 origin, float rotation, Color tint);
 
 Font* LoadFontTTF(const char* path, int pixel_size);
 void  UnloadFont(Font* font);
 void  SetDefaultFont(Font* font);
-void  DrawText(const char* text, float x, float y, float fontSize, Color color);
-void  DrawTextEx(const char* text, float x, float y, float fontSize, Color color, TextStyle style);
+void  Renderer_DrawText(const char* text, float x, float y, float fontSize, Color color);
+void  Renderer_DrawTextEx(const char* text, float x, float y, float fontSize, Color color, TextStyle style);
 
 #ifdef __cplusplus
 }

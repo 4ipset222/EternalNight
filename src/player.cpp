@@ -31,7 +31,7 @@ void Player::Update(float dt)
 
 void Player::Draw() const
 {
-    DrawRectangle(
+    Renderer_DrawRectangle(
         Rect{ x - size / 2.0f, y - size / 2.0f, size, size },
         Color{1.0f, 0.0f, 0.0f, 1.0f}
     );
@@ -55,7 +55,7 @@ void Player::Draw() const
         Rect dst = { sx, sy, drawW * scale, drawH * scale };
         Vec2 origin = { (drawW * scale) * 0.15f, (drawH * scale) * 0.5f };
 
-        DrawTexturePro(*weaponSprite, src, dst, origin, angleRad, Color{1, 1, 1, 1});
+        Renderer_DrawTexturePro(*weaponSprite, src, dst, origin, angleRad, Color{1, 1, 1, 1});
     }
 }
 
@@ -74,10 +74,10 @@ void Player::DrawHP() const
     float xPos = renderer->width - barWidth - margin;
     float yPos = renderer->height - barHeight - margin;
 
-    DrawText("HP", xPos - 30.0f, yPos + 2.0f, 14, Color{1,1,1,1});
-    DrawRectangle(Rect{xPos, yPos, barWidth, barHeight}, Color{0.2f, 0.2f, 0.2f, 1.0f});
-    DrawRectangle(Rect{xPos, yPos, filledWidth, barHeight}, Color{1.0f, 0.0f, 0.0f, 1.0f});
-    DrawRectangleLines(Rect{xPos, yPos, barWidth, barHeight}, 2.0f, Color{1.0f, 1.0f, 1.0f, 1.0f});
+    Renderer_DrawText("HP", xPos - 30.0f, yPos + 2.0f, 14, Color{1,1,1,1});
+    Renderer_DrawRectangle(Rect{xPos, yPos, barWidth, barHeight}, Color{0.2f, 0.2f, 0.2f, 1.0f});
+    Renderer_DrawRectangle(Rect{xPos, yPos, filledWidth, barHeight}, Color{1.0f, 0.0f, 0.0f, 1.0f});
+    Renderer_DrawRectangleLines(Rect{xPos, yPos, barWidth, barHeight}, 2.0f, Color{1.0f, 1.0f, 1.0f, 1.0f});
 }
 
 bool Player::Attack(float dirX, float dirY)

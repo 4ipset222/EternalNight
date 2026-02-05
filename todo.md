@@ -20,7 +20,7 @@ if (fogStrength > 0.0f)
             float dy = centerY - playerScreenY;
             float dist = sqrtf(dx*dx + dy*dy);
             float alpha = std::min(1.0f, dist / fogRadiusScreen * fogStrength);
-            DrawRectangle(Rect{x, y, step, step}, Color{0,0,0,alpha});
+            Renderer_DrawRectangle(Rect{x, y, step, step}, Color{0,0,0,alpha});
         }
     }
 }

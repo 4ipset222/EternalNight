@@ -10,7 +10,7 @@ find_package(GLEW REQUIRED)
 find_package(PNG REQUIRED)
 find_package(Freetype REQUIRED)
 
-add_library(FORGE STATIC
+add_library(forge SHARED
     src/engine/input.c
     src/engine/renderer.c
     src/engine/camera.c
@@ -22,11 +22,17 @@ add_library(FORGE STATIC
     src/engine/worldgen.c
 )
 
-target_include_directories(FORGE PUBLIC
+if(WIN32)
+    set_target_properties(forge PROPERTIES
+        WINDOWS_EXPORT_ALL_SYMBOLS ON
+    )
+endif()
+
+target_include_directories(forge PUBLIC
     src
 )
 
-target_link_libraries(FORGE PUBLIC
+target_link_libraries(forge PUBLIC
     OpenMP::OpenMP_C
     SDL2::SDL2
     GLEW::GLEW
@@ -45,6 +51,6 @@ add_executable(EternalNight
 )
 
 target_link_libraries(EternalNight PRIVATE
-    FORGE
+    forge
     SDL2::SDL2main
 )

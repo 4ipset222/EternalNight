@@ -43,8 +43,8 @@ void Inventory::Draw(float startX, float startY, float slotSize)
         int col = i % columns;
         int row = i / columns;
         Rect slotRect = { startX + col * (slotSize + 4), startY - row * (slotSize + 4), slotSize, slotSize };
-        DrawRectangle(slotRect, Color{0.2f, 0.2f, 0.2f, 1.0f});
-        DrawRectangleLines(slotRect, 2.0f, Color{1.0f, 1.0f, 1.0f, 1.0f});
+        Renderer_DrawRectangle(slotRect, Color{0.2f, 0.2f, 0.2f, 1.0f});
+        Renderer_DrawRectangleLines(slotRect, 2.0f, Color{1.0f, 1.0f, 1.0f, 1.0f});
 
         if (slots[i].used)
         {
@@ -52,23 +52,23 @@ void Inventory::Draw(float startX, float startY, float slotSize)
             if (slots[i].sprite)
             {
                 Rect src = { 0, 0, (float)slots[i].sprite->width, (float)slots[i].sprite->height };
-                DrawTexturePro(*slots[i].sprite, src, itemRect, Vec2{0, 0}, 0.0f, Color{1, 1, 1, 1});
+                Renderer_DrawTexturePro(*slots[i].sprite, src, itemRect, Vec2{0, 0}, 0.0f, Color{1, 1, 1, 1});
             }
             else
             {
-                DrawRectangle(itemRect, slots[i].color);
+                Renderer_DrawRectangle(itemRect, slots[i].color);
             }
-            //DrawText(slots[i].name.c_str(), itemRect.x - 6, itemRect.y - 16, 12, Color{1,1,1,1});
+            //Renderer_DrawText(slots[i].name.c_str(), itemRect.x - 6, itemRect.y - 16, 12, Color{1,1,1,1});
         }
 
         if (i == selectedSlot)
         {
-            DrawRectangleLines(slotRect, 3.0f, Color{1, 1, 0, 1});
+            Renderer_DrawRectangleLines(slotRect, 3.0f, Color{1, 1, 0, 1});
             if(!isExpanded)
             {
                 char buffer[256];
                 snprintf(buffer, sizeof(buffer), "Selected: %s", slots[i].used ? slots[i].name.c_str() : "Empty");
-                DrawText(buffer, startX, startY - 20, 14, Color{1, 1, 1, 1});
+                Renderer_DrawText(buffer, startX, startY - 20, 14, Color{1, 1, 1, 1});
             }
         }
     }
@@ -81,11 +81,11 @@ void Inventory::Draw(float startX, float startY, float slotSize)
         if (heldItem.sprite)
         {
             Rect src = { 0, 0, (float)heldItem.sprite->width, (float)heldItem.sprite->height };
-            DrawTexturePro(*heldItem.sprite, src, heldRect, Vec2{0, 0}, 0.0f, Color{1, 1, 1, 1});
+            Renderer_DrawTexturePro(*heldItem.sprite, src, heldRect, Vec2{0, 0}, 0.0f, Color{1, 1, 1, 1});
         }
         else
         {
-            DrawRectangle(heldRect, heldItem.color);
+            Renderer_DrawRectangle(heldRect, heldItem.color);
         }
     }
 }

@@ -428,7 +428,7 @@ void Renderer_Clear(Color color)
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 }
 
-void DrawRectangle(Rect rect, Color color)
+void Renderer_DrawRectangle(Rect rect, Color color)
 {
     float vertices[] =
     {
@@ -458,7 +458,7 @@ void DrawRectangle(Rect rect, Color color)
     glBindVertexArray(0);
 }
 
-void DrawTrianglesColored(const float* positions, const float* colors, int vertexCount)
+void Renderer_DrawTrianglesColored(const float* positions, const float* colors, int vertexCount)
 {
     if (!g_renderer) return;
     if (!positions || !colors || vertexCount <= 0) return;
@@ -477,7 +477,7 @@ void DrawTrianglesColored(const float* positions, const float* colors, int verte
     glBindVertexArray(0);
 }
 
-void DrawRectangleLines(Rect rect, int line_thick, Color color)
+void Renderer_DrawRectangleLines(Rect rect, int line_thick, Color color)
 {
     float vertices[] =
     {
@@ -520,7 +520,7 @@ void DrawRectangleLines(Rect rect, int line_thick, Color color)
     glDeleteVertexArrays(1, &vao);
 }
 
-void DrawCircle(Vec2 center, float radius, Color color)
+void Renderer_DrawCircle(Vec2 center, float radius, Color color)
 {
     const int segments = 32;
     float* vertices = (float*)malloc((segments + 2) * 2 * sizeof(float));
@@ -580,7 +580,7 @@ void DrawCircle(Vec2 center, float radius, Color color)
     free(indices);
 }
 
-void DrawCircleLines(Vec2 center, float radius, Color color)
+void Renderer_DrawCircleLines(Vec2 center, float radius, Color color)
 {
     const int segments = 32;
     float* vertices = (float*)malloc(segments * 2 * sizeof(float));
@@ -629,7 +629,7 @@ void DrawCircleLines(Vec2 center, float radius, Color color)
     free(indices);
 }
 
-void DrawLine(Vec2 start, Vec2 end, Color color)
+void Renderer_DrawLine(Vec2 start, Vec2 end, Color color)
 {
     float vertices[] =
     {
@@ -655,7 +655,7 @@ void DrawLine(Vec2 start, Vec2 end, Color color)
     glBindVertexArray(0);
 }
 
-void DrawLineEx(Vec2 start, Vec2 end, float thick, Color color)
+void Renderer_DrawLineEx(Vec2 start, Vec2 end, float thick, Color color)
 {
     float vertices[] =
     {
@@ -683,7 +683,7 @@ void DrawLineEx(Vec2 start, Vec2 end, float thick, Color color)
     glBindVertexArray(0);
 }
 
-void DrawTriangle(Vec2 v1, Vec2 v2, Vec2 v3, Color color)
+void Renderer_DrawTriangle(Vec2 v1, Vec2 v2, Vec2 v3, Color color)
 {
     float vertices[] =
     {
@@ -717,7 +717,7 @@ void DrawTriangle(Vec2 v1, Vec2 v2, Vec2 v3, Color color)
     glDeleteVertexArrays(1, &vao);
 }
 
-void DrawTriangleLines(Vec2 v1, Vec2 v2, Vec2 v3, Color color)
+void Renderer_DrawTriangleLines(Vec2 v1, Vec2 v2, Vec2 v3, Color color)
 {
     float vertices[] =
     {
@@ -756,7 +756,7 @@ void DrawTriangleLines(Vec2 v1, Vec2 v2, Vec2 v3, Color color)
     glDeleteVertexArrays(1, &vao);
 }
 
-void DrawTexture(Texture2D texture, Vec2 position, Color tint)
+void Renderer_DrawTexture(Texture2D texture, Vec2 position, Color tint)
 {
     float vertices[] =
     {
@@ -827,7 +827,7 @@ void DrawTexture(Texture2D texture, Vec2 position, Color tint)
     glDeleteBuffers(1, &ibo);
 }
 
-void DrawTextureRec(Texture2D texture, Rect source, Vec2 position, Color tint)
+void Renderer_DrawTextureRec(Texture2D texture, Rect source, Vec2 position, Color tint)
 {
     if (!g_renderer) return;
     
@@ -905,7 +905,7 @@ void DrawTextureRec(Texture2D texture, Rect source, Vec2 position, Color tint)
     glDeleteBuffers(1, &ibo);
 }
 
-void DrawTextureEx(Texture2D texture, Vec2 position, float rotation, float scale, Color tint)
+void Renderer_DrawTextureEx(Texture2D texture, Vec2 position, float rotation, float scale, Color tint)
 {
     if (!g_renderer) return;
     
@@ -995,7 +995,7 @@ void DrawTextureEx(Texture2D texture, Vec2 position, float rotation, float scale
     glDeleteBuffers(1, &ibo);
 }
 
-void DrawTexturePro(Texture2D texture, Rect source, Rect dest, Vec2 origin, float rotation, Color tint)
+void Renderer_DrawTexturePro(Texture2D texture, Rect source, Rect dest, Vec2 origin, float rotation, Color tint)
 {
     if (!g_renderer) return;
     
@@ -1302,9 +1302,9 @@ static Font* GetDefaultFont(void)
     return g_default_font;
 }
 
-void DrawText(const char* text, float x, float y, float fontSize, Color color)
+void Renderer_DrawText(const char* text, float x, float y, float fontSize, Color color)
 {
-    DrawTextEx(text, x, y, fontSize, color, TEXT_STYLE_NORMAL);
+    Renderer_DrawTextEx(text, x, y, fontSize, color, TEXT_STYLE_NORMAL);
 }
 
 static void DrawTextPass(const char* text, float x, float y, float fontSize, Color color)
@@ -1432,7 +1432,7 @@ static void DrawTextPass(const char* text, float x, float y, float fontSize, Col
     free(verts);
 }
 
-void DrawTextEx(const char* text, float x, float y, float fontSize, Color color, TextStyle style)
+void Renderer_DrawTextEx(const char* text, float x, float y, float fontSize, Color color, TextStyle style)
 {
     if (!text)
     {

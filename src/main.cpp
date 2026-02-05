@@ -146,7 +146,7 @@ int main(int argc, char** argv)
                 {
                     float x0 = cx * chunkWorldSize;
                     float y0 = cy * chunkWorldSize;
-                    DrawRectangleLines(Rect{x0, y0, chunkWorldSize, chunkWorldSize}, 1, chunkColor);
+                    Renderer_DrawRectangleLines(Rect{x0, y0, chunkWorldSize, chunkWorldSize}, 1, chunkColor);
                 }
             }
         }
@@ -156,7 +156,7 @@ int main(int argc, char** argv)
         if (fogStrength > 0.0f)
         {
             Color nightOverlay = {0.0f, 0.0f, 0.0f, fogStrength};
-            DrawRectangle(Rect{0, 0, (float)renderer->width, (float)renderer->height}, nightOverlay);
+            Renderer_DrawRectangle(Rect{0, 0, (float)renderer->width, (float)renderer->height}, nightOverlay);
         }
 
         if (showDebug)
@@ -198,9 +198,9 @@ int main(int argc, char** argv)
                 fogStrength
             );
 
-            DrawTextEx(dbg, 10, 10, 16, Color{1, 1, 0, 1}, TEXT_STYLE_OUTLINE_SHADOW);
+            Renderer_DrawTextEx(dbg, 10, 10, 16, Color{1, 1, 0, 1}, TEXT_STYLE_OUTLINE_SHADOW);
 
-            DrawTextEx(" Q/E - zoom\n F3 - debug info\n WASD - move\n 1-5 - select hotbar\n Esc - toggle inventory\n LMB - attack(sword)", (float)renderer->width - 140, 10, 14, Color{1, 1, 1, 1}, TEXT_STYLE_OUTLINE_SHADOW);
+            Renderer_DrawTextEx(" WASD - move\n LMB - attack(sword)\n 1-5 - select hotbar\n Esc - toggle inventory\n Q/E - zoom\n F3 - debug info", (float)renderer->width - 140, 10, 14, Color{1, 1, 1, 1}, TEXT_STYLE_OUTLINE_SHADOW);
         }
 
         inventory.Draw(10.0f, (float)renderer->height - 50.0f, 32.0f);

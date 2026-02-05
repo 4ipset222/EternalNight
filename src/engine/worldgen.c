@@ -1,4 +1,5 @@
 #include "worldgen.h"
+#include "forgesystem.h"
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
@@ -339,6 +340,8 @@ ForgeWorld* World_Create(int loadRadiusChunks, int seed)
     orange.attackCooldown = 0.8f;
     orange.maxHP = 20.0f;
     World_RegisterMobType(world, &orange);
+
+    dbg_msg("World", "Created world with seed %d", seed);
 
     return world;
 }
