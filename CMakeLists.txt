@@ -40,17 +40,38 @@ target_link_libraries(forge PUBLIC
     Freetype::Freetype
 )
 
+add_library(NETWORK STATIC
+    src/net/client.c
+    src/net/client.h
+    src/net/net.c
+    src/net/net.h
+    src/net/protocol.h
+    src/net/server.c
+    src/net/server.h
+)
+
+target_include_directories(NETWORK PUBLIC
+    src
+)
+
+target_link_libraries(NETWORK PUBLIC
+    ws2_32
+)
+
 add_executable(EternalNight
     src/inventory.cpp
     src/inventory.h
     src/main.cpp
     src/player.cpp
     src/player.h
+    src/ui/imgui_lite.cpp
+    src/ui/imgui_lite.h
     src/world.cpp
     src/world.h
 )
 
 target_link_libraries(EternalNight PRIVATE
     forge
+    NETWORK
     SDL2::SDL2main
 )

@@ -33,7 +33,7 @@ void Player::Draw() const
 {
     Renderer_DrawRectangle(
         Rect{ x - size / 2.0f, y - size / 2.0f, size, size },
-        Color{1.0f, 0.0f, 0.0f, 1.0f}
+        color
     );
 
     if (isAttacking && weaponSprite)
@@ -98,4 +98,13 @@ bool Player::Attack(float dirX, float dirY)
     attackProgress = 0.0f;
     isAttacking = true;
     return true;
+}
+
+void Player::SetAttackState(bool attacking, float progress, float dirX, float dirY, float baseAngle)
+{
+    isAttacking = attacking;
+    attackProgress = progress;
+    attackDirX = dirX;
+    attackDirY = dirY;
+    attackBaseAngle = baseAngle;
 }

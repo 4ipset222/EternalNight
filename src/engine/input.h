@@ -83,6 +83,9 @@ bool Input_IsMouseReleased(MouseButton button);
 int  Input_GetMouseX(void);
 int  Input_GetMouseY(void);
 
+const char* Input_GetTextInput(void);
+int  Input_GetTextInputLen(void);
+
 #ifdef __cplusplus
 }
 #endif

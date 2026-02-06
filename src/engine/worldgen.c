@@ -109,7 +109,14 @@ int World_SpawnMob(ForgeWorld* world, int type, float x, float y)
 
 void World_UpdateMobs(ForgeWorld* world, float dt, int isNight, float playerX, float playerY, float playerRadius, float* ioPlayerHP)
 {
-    if (!world || !world->mobs || world->mobTypeCount <= 0)
+    float px = playerX;
+    float py = playerY;
+    World_UpdateMobsMulti(world, dt, isNight, &px, &py, 1, playerRadius, ioPlayerHP);
+}
+
+void World_UpdateMobsMulti(ForgeWorld* world, float dt, int isNight, const float* playerX, const float* playerY, int playerCount, float playerRadius, float* ioPlayerHP)
+{
+    if (!world || !world->mobs || world->mobTypeCount <= 0 || playerCount <= 0)
         return;
 
     const int desiredCount = 12;
@@ -128,10 +135,14 @@ void World_UpdateMobs(ForgeWorld* world, float dt, int isNight, float playerX, f
 
     if (isNight && world->mobCount < desiredCount && world->mobSpawnCooldown <= 0.0f)
     {
+        int pick = (int)(World_Rand01(world) * (float)playerCount);
+        if (pick < 0) pick = 0;
+        if (pick >= playerCount) pick = playerCount - 1;
+
         float angle = World_Rand01(world) * 6.2831853f;
         float radius = spawnMinRadius + World_Rand01(world) * (spawnMaxRadius - spawnMinRadius);
-        float sx = playerX + cosf(angle) * radius;
-        float sy = playerY + sinf(angle) * radius;
+        float sx = playerX[pick] + cosf(angle) * radius;
+        float sy = playerY[pick] + sinf(angle) * radius;
 
         int type = (int)(World_Rand01(world) * (float)world->mobTypeCount);
         if (type < 0) type = 0;
@@ -149,10 +160,24 @@ void World_UpdateMobs(ForgeWorld* world, float dt, int isNight, float playerX, f
         if (mob->attackTimer > 0.0f)
             mob->attackTimer -= dt;
 
-        float dx = playerX - mob->x;
-        float dy = playerY - mob->y;
-        float distSq = dx * dx + dy * dy;
-        if (distSq > despawnRadius * despawnRadius)
+        float bestDistSq = 1e30f;
+        int bestIdx = 0;
+        for (int p = 0; p < playerCount; ++p)
+        {
+            float dxp = playerX[p] - mob->x;
+            float dyp = playerY[p] - mob->y;
+            float d = dxp * dxp + dyp * dyp;
+            if (d < bestDistSq)
+            {
+                bestDistSq = d;
+                bestIdx = p;
+            }
+        }
+
+        float targetX = playerX[bestIdx];
+        float targetY = playerY[bestIdx];
+
+        if (bestDistSq > despawnRadius * despawnRadius)
         {
             world->mobs[i] = world->mobs[world->mobCount - 1];
             world->mobCount--;
@@ -161,13 +186,13 @@ void World_UpdateMobs(ForgeWorld* world, float dt, int isNight, float playerX, f
         }
 
         float aggro = arch->aggroRange;
-        if (distSq <= aggro * aggro)
+        if (bestDistSq <= aggro * aggro)
         {
-            float dist = sqrtf(distSq);
+            float dist = sqrtf(bestDistSq);
             if (dist > 0.001f)
             {
-                float nx = dx / dist;
-                float ny = dy / dist;
+                float nx = (targetX - mob->x) / dist;
+                float ny = (targetY - mob->y) / dist;
                 float stopDist = (arch->size * 0.5f) + playerRadius;
                 if (dist > stopDist)
                 {
@@ -176,19 +201,19 @@ void World_UpdateMobs(ForgeWorld* world, float dt, int isNight, float playerX, f
                 }
                 else
                 {
-                    mob->x = playerX - nx * stopDist;
-                    mob->y = playerY - ny * stopDist;
+                    mob->x = targetX - nx * stopDist;
+                    mob->y = targetY - ny * stopDist;
                 }
             }
         }
 
         float attackRange = arch->attackRange + playerRadius;
-        if (distSq <= attackRange * attackRange)
+        if (bestDistSq <= attackRange * attackRange)
         {
             if (mob->attackTimer <= 0.0f && ioPlayerHP)
             {
-                float hp = *ioPlayerHP - arch->attackDamage;
-                *ioPlayerHP = hp < 0.0f ? 0.0f : hp;
+                float hp = ioPlayerHP[bestIdx] - arch->attackDamage;
+                ioPlayerHP[bestIdx] = hp < 0.0f ? 0.0f : hp;
                 mob->attackTimer = arch->attackCooldown;
             }
         }

@@ -106,6 +106,7 @@ typedef struct Mob
 int  World_RegisterMobType(ForgeWorld* world, const MobArchetype* archetype);
 int  World_SpawnMob(ForgeWorld* world, int type, float x, float y);
 void World_UpdateMobs(ForgeWorld* world, float dt, int isNight, float playerX, float playerY, float playerRadius, float* ioPlayerHP);
+void World_UpdateMobsMulti(ForgeWorld* world, float dt, int isNight, const float* playerX, const float* playerY, int playerCount, float playerRadius, float* ioPlayerHP);
 int  World_PlayerAttack(ForgeWorld* world, float originX, float originY, float dirX, float dirY, float range, float arcCos, float damage);
 
 const Mob* World_GetMobs(const ForgeWorld* world, int* outCount);
