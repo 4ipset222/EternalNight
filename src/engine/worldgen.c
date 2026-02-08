@@ -74,6 +74,59 @@ static float World_Rand01(ForgeWorld* world)
     return (float)(World_Rand(world) & 0x00FFFFFFu) / (float)0x01000000u;
 }
 
+int World_IsTileSolid(TileType type)
+{
+    return (type == TILE_STONE || type == TILE_DEEP_WATER) ? 1 : 0;
+}
+
+static int World_IsTileBlockedForSpawn(TileType type)
+{
+    return (type == TILE_STONE || type == TILE_WATER || type == TILE_DEEP_WATER) ? 1 : 0;
+}
+
+static int World_IsPointSolid(ForgeWorld* world, float tileSize, float x, float y)
+{
+    if (!world || tileSize <= 0.0f) return 0;
+    int tx = (int)floorf(x / tileSize);
+    int ty = (int)floorf(y / tileSize);
+    TileType t = World_GetTile(world, tx, ty);
+    return World_IsTileSolid(t);
+}
+
+static int World_IsCircleSolid(ForgeWorld* world, float tileSize, float x, float y, float radius)
+{
+    if (radius <= 0.0f) return World_IsPointSolid(world, tileSize, x, y);
+    if (World_IsPointSolid(world, tileSize, x - radius, y - radius)) return 1;
+    if (World_IsPointSolid(world, tileSize, x + radius, y - radius)) return 1;
+    if (World_IsPointSolid(world, tileSize, x - radius, y + radius)) return 1;
+    if (World_IsPointSolid(world, tileSize, x + radius, y + radius)) return 1;
+    return 0;
+}
+
+void World_MoveWithCollision(ForgeWorld* world, float tileSize, float radius, float* ioX, float* ioY, float dx, float dy)
+{
+    if (!ioX || !ioY) return;
+    float x = *ioX;
+    float y = *ioY;
+    float nx = x + dx;
+    float ny = y + dy;
+
+    if (!world || tileSize <= 0.0f)
+    {
+        *ioX = nx;
+        *ioY = ny;
+        return;
+    }
+
+    if (!World_IsCircleSolid(world, tileSize, nx, y, radius))
+        x = nx;
+    if (!World_IsCircleSolid(world, tileSize, x, ny, radius))
+        y = ny;
+
+    *ioX = x;
+    *ioY = y;
+}
+
 int World_RegisterMobType(ForgeWorld* world, const MobArchetype* archetype)
 {
     if (!world || !archetype || !world->mobTypes)
@@ -119,6 +172,7 @@ void World_UpdateMobsMulti(ForgeWorld* world, float dt, int isNight, const float
     if (!world || !world->mobs || world->mobTypeCount <= 0 || playerCount <= 0)
         return;
 
+    const float tileSize = 16.0f;
     const int desiredCount = 12;
     const float spawnCooldown = 4.0f;
     const float spawnMinRadius = 220.0f;
@@ -139,17 +193,31 @@ void World_UpdateMobsMulti(ForgeWorld* world, float dt, int isNight, const float
         if (pick < 0) pick = 0;
         if (pick >= playerCount) pick = playerCount - 1;
 
-        float angle = World_Rand01(world) * 6.2831853f;
-        float radius = spawnMinRadius + World_Rand01(world) * (spawnMaxRadius - spawnMinRadius);
-        float sx = playerX[pick] + cosf(angle) * radius;
-        float sy = playerY[pick] + sinf(angle) * radius;
-
         int type = (int)(World_Rand01(world) * (float)world->mobTypeCount);
         if (type < 0) type = 0;
         if (type >= world->mobTypeCount) type = world->mobTypeCount - 1;
 
-        World_SpawnMob(world, type, sx, sy);
-        world->mobSpawnCooldown = spawnCooldown;
+        bool spawned = false;
+        for (int attempt = 0; attempt < 12; ++attempt)
+        {
+            float angle = World_Rand01(world) * 6.2831853f;
+            float radius = spawnMinRadius + World_Rand01(world) * (spawnMaxRadius - spawnMinRadius);
+            float sx = playerX[pick] + cosf(angle) * radius;
+            float sy = playerY[pick] + sinf(angle) * radius;
+
+            int tx = (int)floorf(sx / tileSize);
+            int ty = (int)floorf(sy / tileSize);
+            TileType t = World_GetTile(world, tx, ty);
+            if (World_IsTileBlockedForSpawn(t))
+                continue;
+
+            World_SpawnMob(world, type, sx, sy);
+            world->mobSpawnCooldown = spawnCooldown;
+            spawned = true;
+            break;
+        }
+        if (!spawned)
+            world->mobSpawnCooldown = spawnCooldown;
     }
 
     for (int i = 0; i < world->mobCount; i++)
@@ -196,13 +264,19 @@ void World_UpdateMobsMulti(ForgeWorld* world, float dt, int isNight, const float
                 float stopDist = (arch->size * 0.5f) + playerRadius;
                 if (dist > stopDist)
                 {
-                    mob->x += nx * arch->speed * dt;
-                    mob->y += ny * arch->speed * dt;
+                    float dx = nx * arch->speed * dt;
+                    float dy = ny * arch->speed * dt;
+                    float radius = arch->size * 0.5f;
+                    World_MoveWithCollision(world, tileSize, radius, &mob->x, &mob->y, dx, dy);
                 }
                 else
                 {
-                    mob->x = targetX - nx * stopDist;
-                    mob->y = targetY - ny * stopDist;
+                    float desiredX = targetX - nx * stopDist;
+                    float desiredY = targetY - ny * stopDist;
+                    float radius = arch->size * 0.5f;
+                    float dx = desiredX - mob->x;
+                    float dy = desiredY - mob->y;
+                    World_MoveWithCollision(world, tileSize, radius, &mob->x, &mob->y, dx, dy);
                 }
             }
         }
@@ -288,12 +362,16 @@ void Chunk_Generate(Chunk* chunk, int seed)
 {
     Perlin_Init(seed);
 
-    float scale = 50.0f;
+    float scale = 70.0f;
     float invScale = 1.0f / scale;
 
-    float waterLevel = 0.4f;
-    float beachLevel = 0.45f;
-    float stoneLevel = 0.65f;
+    float oceanLevel = 0.38f;
+    float shallowWaterLevel = oceanLevel + 0.03f;
+    float beachLevel = oceanLevel + 0.06f;
+    float hillLevel = 0.62f;
+    float mountainLevel = 0.72f;
+    float coldTemp = 0.35f;
+    float hotTemp = 0.68f;
 
     int baseX = chunk->cx * CHUNK_SIZE;
     int baseY = chunk->cy * CHUNK_SIZE;
@@ -308,22 +386,58 @@ void Chunk_Generate(Chunk* chunk, int seed)
             float nx = wx * invScale;
             float ny = wy * invScale;
 
-            float h = FractalPerlin2D(nx, ny, 3, 0.5f);
-            float d = Perlin2D(nx * 2.0f, ny * 2.0f);
-            float v = h * 0.85f + d * 0.15f;
+            float h = FractalPerlin2D(nx, ny, 4, 0.5f);
+            float d = Perlin2D(nx * 2.2f, ny * 2.2f);
+            float v = h * 0.8f + d * 0.2f;
+
+            float continent = FractalPerlin2D(nx * 0.15f, ny * 0.15f, 2, 0.5f);
+            float oceanBias = (0.5f - continent) * 0.25f;
+            float height = v + oceanBias;
+
+            float temp = FractalPerlin2D(nx * 0.08f, ny * 0.08f, 2, 0.5f);
+            temp -= (height - 0.5f) * 0.6f;
+            if (temp < 0.0f) temp = 0.0f;
+            if (temp > 1.0f) temp = 1.0f;
+
+            float moisture = FractalPerlin2D(nx * 0.12f, ny * 0.12f, 3, 0.5f);
 
             Tile* tile = &chunk->tiles[y * CHUNK_SIZE + x];
 
-            if (v < waterLevel)
+            if (height < oceanLevel)
+            {
                 tile->type = TILE_DEEP_WATER;
-            else if (v < waterLevel + 0.02f)
-                tile->type = TILE_WATER;
-            else if (v < beachLevel)
-                tile->type = TILE_SAND;
-            else if (v < stoneLevel)
-                tile->type = (d > 0.5f) ? TILE_GRASS : TILE_DIRT;
+            }
+            else if (height < shallowWaterLevel)
+            {
+                tile->type = (temp < coldTemp) ? TILE_ICE : TILE_WATER;
+            }
+            else if (height < beachLevel)
+            {
+                tile->type = (temp < coldTemp) ? TILE_SNOW : TILE_SAND;
+            }
+            else if (height > mountainLevel)
+            {
+                tile->type = (temp < 0.45f) ? TILE_SNOW : TILE_STONE;
+            }
+            else if (height > hillLevel)
+            {
+                tile->type = (temp < coldTemp) ? TILE_SNOW : TILE_STONE;
+            }
             else
-                tile->type = TILE_STONE;
+            {
+                if (temp < coldTemp)
+                {
+                    tile->type = TILE_SNOW;
+                }
+                else if (temp > hotTemp && moisture < 0.45f)
+                {
+                    tile->type = TILE_SAND;
+                }
+                else
+                {
+                    tile->type = (moisture > 0.6f) ? TILE_GRASS : TILE_DIRT;
+                }
+            }
         }
     }
 
@@ -491,6 +605,8 @@ Vec4 World_GetTileColor(TileType type)
         case TILE_SAND:       return (Vec4){0.9f, 0.8f, 0.4f, 1.0f};
         case TILE_WATER:      return (Vec4){0.2f, 0.6f, 1.0f, 1.0f};
         case TILE_DEEP_WATER: return (Vec4){0.1f, 0.4f, 0.8f, 1.0f};
+        case TILE_SNOW:       return (Vec4){0.92f, 0.95f, 0.98f, 1.0f};
+        case TILE_ICE:        return (Vec4){0.7f, 0.9f, 1.0f, 1.0f};
         default:              return (Vec4){1.0f, 0.0f, 1.0f, 1.0f};
     }
 }

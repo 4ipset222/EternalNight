@@ -66,6 +66,9 @@ add_executable(EternalNight
     src/player.h
     src/ui/imgui_lite.cpp
     src/ui/imgui_lite.h
+    src/ui/multiplayer_ui.cpp
+    src/ui/multiplayer_ui.h
+    src/multiplayer_types.h
     src/world.cpp
     src/world.h
 )
@@ -75,3 +78,16 @@ target_link_libraries(EternalNight PRIVATE
     NETWORK
     SDL2::SDL2main
 )
+
+add_executable(EternalNight-srv
+    src/server_main.cpp
+    src/world.cpp
+    src/world.h
+)
+
+target_link_libraries(EternalNight-srv PRIVATE
+    forge
+    NETWORK
+)
+
+target_compile_definitions(EternalNight-srv PRIVATE SDL_MAIN_HANDLED)

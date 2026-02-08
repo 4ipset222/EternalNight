@@ -8,13 +8,42 @@
 #include "player.h"
 #include "ui/imgui_lite.h"
 #include "world.h"
+#include "multiplayer_types.h"
+#include "ui/multiplayer_ui.h"
+#ifdef _WIN32
+#include <windows.h>
+#endif
 
-enum class MpMode
+static bool LaunchServerProcess(uint16_t port)
 {
-    None,
-    Host,
-    Client
-};
+#ifdef _WIN32
+    char cmd[128];
+    snprintf(cmd, sizeof(cmd), "EternalNight-srv.exe %u", (unsigned int)port);
+    STARTUPINFOA si = {};
+    PROCESS_INFORMATION pi = {};
+    si.cb = sizeof(si);
+    BOOL ok = CreateProcessA(
+        NULL,
+        cmd,
+        NULL,
+        NULL,
+        FALSE,
+        CREATE_NO_WINDOW,
+        NULL,
+        NULL,
+        &si,
+        &pi
+    );
+    if (!ok)
+        return false;
+    CloseHandle(pi.hThread);
+    CloseHandle(pi.hProcess);
+    return true;
+#else
+    (void)port;
+    return false;
+#endif
+}
 
 struct RemotePlayer
 {
@@ -88,13 +117,16 @@ int main(int argc, char** argv)
     float mobSyncTimer = 0.0f;
     std::vector<PendingInput> pendingInputs;
     uint16_t inputSeq = 0;
+    float attackBufferTimer = 0.0f;
+    float lastAttackDirX = 1.0f;
+    float lastAttackDirY = 0.0f;
 
     bool showDebug = false;
     bool prevF3 = false;
 
     float fogRadius = 200.0f;
     float fogStrength = 0.0f;
-    const float DAY_DURATION = 5.0f;
+    const float DAY_DURATION = 300.0f;
     const float NIGHT_DURATION = 180.0f;
     const float NIGHT_FADE = 10.0f;
     bool isNight = false;
@@ -147,7 +179,7 @@ int main(int argc, char** argv)
 
         if (!multiplayerActive)
         {
-            player.Update(dt);
+            player.Update(dt, netInput.moveX, netInput.moveY, world.GetRaw(), world.GetTileSize());
 
             if (weaponSprite && Input_IsMousePressed(MOUSE_LEFT))
             {
@@ -174,15 +206,23 @@ int main(int argc, char** argv)
         else
         {
             bool skipSnapshot = false;
+            if (attackBufferTimer > 0.0f)
+                attackBufferTimer -= dt;
             if (weaponSprite && !uiBlockInput && Input_IsMousePressed(MOUSE_LEFT))
             {
                 float mx = (float)Input_GetMouseX();
                 float my = (float)Input_GetMouseY();
                 float worldMx = camera.x + mx / camera.zoom;
                 float worldMy = camera.y + my / camera.zoom;
+                lastAttackDirX = worldMx - player.GetX();
+                lastAttackDirY = worldMy - player.GetY();
+                attackBufferTimer = 0.20f;
+            }
+            if (attackBufferTimer > 0.0f)
+            {
                 netInput.attack = 1;
-                netInput.attackDirX = worldMx - player.GetX();
-                netInput.attackDirY = worldMy - player.GetY();
+                netInput.attackDirX = lastAttackDirX;
+                netInput.attackDirY = lastAttackDirY;
             }
 
             if (mpMode == MpMode::Client && clientReady)
@@ -196,8 +236,10 @@ int main(int argc, char** argv)
                     mx *= inv;
                     my *= inv;
                 }
-                float px = player.GetX() + mx * NET_PLAYER_SPEED * dt;
-                float py = player.GetY() + my * NET_PLAYER_SPEED * dt;
+                float px = player.GetX();
+                float py = player.GetY();
+                float radius = player.GetSize() * 0.45f;
+                World_MoveWithCollision(world.GetRaw(), world.GetTileSize(), radius, &px, &py, mx * NET_PLAYER_SPEED * dt, my * NET_PLAYER_SPEED * dt);
                 player.SetPosition(px, py);
 
                 inputSeq++;
@@ -207,7 +249,6 @@ int main(int argc, char** argv)
 
             if (mpMode == MpMode::Host && serverReady)
             {
-                Server_SetLocalInput(&server, &netInput);
                 Server_Update(&server, dt);
             }
             else if (mpMode == MpMode::Client && clientReady)
@@ -262,8 +303,10 @@ int main(int argc, char** argv)
                         }
                         for (const auto& inp : pendingInputs)
                         {
-                            float nx = player.GetX() + inp.moveX * NET_PLAYER_SPEED * inp.dt;
-                            float ny = player.GetY() + inp.moveY * NET_PLAYER_SPEED * inp.dt;
+                            float nx = player.GetX();
+                            float ny = player.GetY();
+                            float radius = player.GetSize() * 0.45f;
+                            World_MoveWithCollision(world.GetRaw(), world.GetTileSize(), radius, &nx, &ny, inp.moveX * NET_PLAYER_SPEED * inp.dt, inp.moveY * NET_PLAYER_SPEED * inp.dt);
                             player.SetPosition(nx, ny);
                         }
                     }
@@ -499,7 +542,7 @@ int main(int argc, char** argv)
                     if (m.type < 0 || m.type >= typeCount)
                         continue;
                     const MobArchetype& arch = types[m.type];
-                    DrawRectangle(
+                    Renderer_DrawRectangle(
                         Rect{ m.x - arch.size * 0.5f, m.y - arch.size * 0.5f, arch.size, arch.size },
                         Color{ arch.color.x, arch.color.y, arch.color.z, arch.color.w }
                     );
@@ -557,28 +600,35 @@ int main(int argc, char** argv)
 
             Renderer_DrawTextEx(" WASD - move\n LMB - attack(sword)\n 1-5 - select hotbar\n Esc - toggle inventory\n Q/E - zoom\n F3 - debug info", (float)renderer->width - 140, 10, 14, Color{1, 1, 1, 1}, TEXT_STYLE_OUTLINE_SHADOW);
         }
-        ImGuiLite_EndWindow(&ui);
-        ImGuiLite_EndFrame(&ui);
+
+        MpUiResult uiResult = DrawMultiplayerUI(&ui, &uiX, &uiY, uiW, uiH, mpMode, 1 + (int)remotePlayers.size(), ipBuffer, (int)sizeof(ipBuffer), portBuffer, (int)sizeof(portBuffer));
 
         inventory.Draw(10.0f, (float)renderer->height - 50.0f, 32.0f);
+        player.DrawStamina();
         player.DrawHP();
 
-        if (hostClicked)
+        if (uiResult.hostClicked)
         {
             int port = atoi(portBuffer);
             if (port <= 0 || port > 65535) port = 7777;
-            serverReady = Server_Init(&server, (uint16_t)port, WORLD_SEED);
-            if (serverReady)
+            if (LaunchServerProcess((uint16_t)port))
             {
-                mpMode = MpMode::Host;
+                if (!clientReady)
+                    clientReady = Client_Init(&client);
+                if (clientReady && Client_Connect(&client, "127.0.0.1", (uint16_t)port))
+                {
+                    mpMode = MpMode::Client;
+                    remotePlayers.clear();
+                    pendingInputs.clear();
+                    inputSeq = 0;
+                }
+            }
+            else
+            {
                 remotePlayers.clear();
-                player.SetColor(ColorForId(0));
-                Server_SetLocalPosition(&server, player.GetX(), player.GetY(), player.GetHP());
-                pendingInputs.clear();
-                inputSeq = 0;
             }
         }
-        if (joinClicked)
+        if (uiResult.joinClicked)
         {
             int port = atoi(portBuffer);
             if (port <= 0 || port > 65535) port = 7777;
@@ -592,7 +642,7 @@ int main(int argc, char** argv)
                 inputSeq = 0;
             }
         }
-        if (disconnectClicked)
+        if (uiResult.disconnectClicked)
         {
             if (mpMode == MpMode::Host && serverReady)
                 Server_Shutdown(&server);

@@ -2,6 +2,9 @@
 #include "engine/input.h"
 #include <string.h>
 #include <stdio.h>
+#include <stdlib.h>
+#include <math.h>
+#include <SDL2/SDL.h>
 
 static bool PointInRect(float x, float y, float rx, float ry, float rw, float rh)
 {
@@ -14,6 +17,84 @@ static int HashId(const char* label)
     for (const char* p = label; *p; ++p)
         h = ((h << 5) + h) + *p;
     return h;
+}
+
+static int ClampInt(int v, int minv, int maxv)
+{
+    if (v < minv) return minv;
+    if (v > maxv) return maxv;
+    return v;
+}
+
+static int MinInt(int a, int b) { return (a < b) ? a : b; }
+static int MaxInt(int a, int b) { return (a > b) ? a : b; }
+
+static void DeleteRange(char* buffer, int start, int end)
+{
+    if (!buffer) return;
+    int len = (int)strlen(buffer);
+    start = ClampInt(start, 0, len);
+    end = ClampInt(end, 0, len);
+    if (start >= end) return;
+    memmove(buffer + start, buffer + end, (size_t)(len - end + 1));
+}
+
+static int InsertTextAt(char* buffer, int bufferSize, int pos, const char* text, int textLen)
+{
+    if (!buffer || !text || bufferSize <= 0) return 0;
+    int len = (int)strlen(buffer);
+    pos = ClampInt(pos, 0, len);
+    if (textLen < 0) textLen = (int)strlen(text);
+    int available = bufferSize - 1 - len;
+    if (available <= 0 || textLen <= 0) return 0;
+    if (textLen > available) textLen = available;
+    memmove(buffer + pos + textLen, buffer + pos, (size_t)(len - pos + 1));
+    memcpy(buffer + pos, text, (size_t)textLen);
+    return textLen;
+}
+
+static int GetCaretFromMouse(float mouseX, float textStartX, float charW, int len)
+{
+    if (charW <= 0.0f) return len;
+    float rel = mouseX - textStartX;
+    int caret = (int)floorf(rel / charW + 0.5f);
+    return ClampInt(caret, 0, len);
+}
+
+static int CopySelectionToClipboard(const char* buffer, int start, int end)
+{
+    if (!buffer) return 0;
+    int len = (int)strlen(buffer);
+    start = ClampInt(start, 0, len);
+    end = ClampInt(end, 0, len);
+    if (start >= end) return 0;
+    int selLen = end - start;
+    char* tmp = (char*)malloc((size_t)selLen + 1);
+    if (!tmp) return 0;
+    memcpy(tmp, buffer + start, (size_t)selLen);
+    tmp[selLen] = '\0';
+    SDL_SetClipboardText(tmp);
+    free(tmp);
+    return selLen;
+}
+
+static int PasteFromClipboard(char* buffer, int bufferSize, int caret)
+{
+    if (!SDL_HasClipboardText()) return 0;
+    char* clip = SDL_GetClipboardText();
+    if (!clip) return 0;
+    char paste[512];
+    int p = 0;
+    for (const char* s = clip; *s && p < (int)sizeof(paste) - 1; ++s)
+    {
+        if (*s == '\r' || *s == '\n')
+            continue;
+        paste[p++] = *s;
+    }
+    paste[p] = '\0';
+    SDL_free(clip);
+    if (p == 0) return 0;
+    return InsertTextAt(buffer, bufferSize, caret, paste, p);
 }
 
 void ImGuiLite_BeginFrame(ImGuiLiteContext* ctx)
@@ -84,9 +165,9 @@ void ImGuiLite_BeginWindow(ImGuiLiteContext* ctx, const char* title, float* x, f
     ctx->rowHeight = 24.0f;
     ctx->padding = 6.0f;
 
-    DrawRectangle(Rect{wx, wy, w, h}, Color{0.08f, 0.08f, 0.10f, 0.92f});
-    DrawRectangleLines(Rect{wx, wy, w, h}, 2, Color{0.3f, 0.3f, 0.35f, 1.0f});
-    DrawRectangle(Rect{wx, wy, w, titleH}, Color{0.12f, 0.12f, 0.16f, 1.0f});
+    Renderer_DrawRectangle(Rect{wx, wy, w, h}, Color{0.08f, 0.08f, 0.10f, 0.92f});
+    Renderer_DrawRectangleLines(Rect{wx, wy, w, h}, 2, Color{0.3f, 0.3f, 0.35f, 1.0f});
+    Renderer_DrawRectangle(Rect{wx, wy, w, titleH}, Color{0.12f, 0.12f, 0.16f, 1.0f});
     Renderer_DrawTextEx(title, wx + 10.0f, wy + 5.0f, 15.0f, Color{1, 1, 1, 1}, TEXT_STYLE_OUTLINE_SHADOW);
 }
 
@@ -134,8 +215,8 @@ bool ImGuiLite_Button(ImGuiLiteContext* ctx, const char* label, float w, float h
     if (ctx->activeId == id)
         base = Color{0.30f, 0.30f, 0.38f, 1.0f};
 
-    DrawRectangle(Rect{x, y, bw, bh}, base);
-    DrawRectangleLines(Rect{x, y, bw, bh}, 1, Color{0.6f, 0.6f, 0.7f, 1.0f});
+    Renderer_DrawRectangle(Rect{x, y, bw, bh}, base);
+    Renderer_DrawRectangleLines(Rect{x, y, bw, bh}, 1, Color{0.6f, 0.6f, 0.7f, 1.0f});
     Renderer_DrawTextEx(label, x + 8.0f, y + 4.0f, 14.0f, Color{1, 1, 1, 1}, TEXT_STYLE_OUTLINE_SHADOW);
 
     ctx->cursorY += bh + ctx->padding;
@@ -171,10 +252,10 @@ bool ImGuiLite_Checkbox(ImGuiLiteContext* ctx, const char* label, bool* value)
         changed = true;
     }
 
-    DrawRectangle(Rect{x, y, size, size}, Color{0.12f, 0.12f, 0.16f, 1.0f});
-    DrawRectangleLines(Rect{x, y, size, size}, 1, Color{0.6f, 0.6f, 0.7f, 1.0f});
+    Renderer_DrawRectangle(Rect{x, y, size, size}, Color{0.12f, 0.12f, 0.16f, 1.0f});
+    Renderer_DrawRectangleLines(Rect{x, y, size, size}, 1, Color{0.6f, 0.6f, 0.7f, 1.0f});
     if (value && *value)
-        DrawRectangle(Rect{x + 4.0f, y + 4.0f, size - 8.0f, size - 8.0f}, Color{0.3f, 0.8f, 0.4f, 1.0f});
+        Renderer_DrawRectangle(Rect{x + 4.0f, y + 4.0f, size - 8.0f, size - 8.0f}, Color{0.3f, 0.8f, 0.4f, 1.0f});
 
     Renderer_DrawTextEx(label, x + size + 8.0f, y + 2.0f, 14.0f, Color{1, 1, 1, 1}, TEXT_STYLE_OUTLINE_SHADOW);
     ctx->cursorY += size + ctx->padding;
@@ -190,6 +271,12 @@ bool ImGuiLite_InputText(ImGuiLiteContext* ctx, const char* label, char* buffer,
     float y = ctx->cursorY;
     float bw = ctx->winW - 24.0f;
     float bh = 22.0f;
+    float fontSize = 13.0f;
+    float charW = fontSize * 0.50f;
+    int labelLen = (int)strlen(label);
+    float labelStartX = x + 6.0f;
+    float textStartX = labelStartX + (float)labelLen * charW + 2.0f * charW - 2.0f;
+    float caretOffset = -1.0f;
 
     bool hovered = PointInRect(ctx->mouseX, ctx->mouseY, x, y, bw, bh);
     if (hovered)
@@ -198,37 +285,126 @@ bool ImGuiLite_InputText(ImGuiLiteContext* ctx, const char* label, char* buffer,
         ctx->wantsMouse = true;
     }
 
-    if (hovered && ctx->mousePressed)
+    if (ctx->mousePressed)
     {
-        ctx->activeId = id;
-        ctx->kbdId = id;
+        if (hovered)
+        {
+            ctx->activeId = id;
+            ctx->kbdId = id;
+            int len = (int)strlen(buffer);
+            int caret = GetCaretFromMouse(ctx->mouseX, textStartX, charW, len);
+            ctx->caret = caret;
+            ctx->textSelStart = caret;
+            ctx->textSelEnd = caret;
+            ctx->selecting = true;
+        }
+        else if (ctx->kbdId == id)
+        {
+            ctx->kbdId = 0;
+            ctx->selecting = false;
+        }
     }
 
     bool focused = (ctx->kbdId == id);
     if (focused)
     {
         ctx->wantsKeyboard = true;
-        if (ctx->textInputLen > 0)
+        int len = (int)strlen(buffer);
+        ctx->caret = ClampInt(ctx->caret, 0, len);
+        ctx->textSelStart = ClampInt(ctx->textSelStart, 0, len);
+        ctx->textSelEnd = ClampInt(ctx->textSelEnd, 0, len);
+
+        if (ctx->mouseDown && ctx->selecting)
         {
-            int len = (int)strlen(buffer);
-            int available = bufferSize - 1 - len;
-            if (available > 0)
+            int caret = GetCaretFromMouse(ctx->mouseX, textStartX, charW, len);
+            ctx->caret = caret;
+            ctx->textSelEnd = caret;
+        }
+        if (ctx->mouseReleased)
+        {
+            ctx->selecting = false;
+        }
+
+        int selStart = MinInt(ctx->textSelStart, ctx->textSelEnd);
+        int selEnd = MaxInt(ctx->textSelStart, ctx->textSelEnd);
+        bool hasSelection = (selStart != selEnd);
+
+        bool ctrlDown = Input_IsKeyDown(KEY_LEFT_CTRL) || Input_IsKeyDown(KEY_RIGHT_CTRL);
+        if (ctrlDown && Input_IsKeyPressed(KEY_C))
+        {
+            CopySelectionToClipboard(buffer, selStart, selEnd);
+        }
+        if (ctrlDown && Input_IsKeyPressed(KEY_X))
+        {
+            if (CopySelectionToClipboard(buffer, selStart, selEnd) > 0)
             {
-                int copyCount = ctx->textInputLen;
-                if (copyCount > available) copyCount = available;
-                memcpy(buffer + len, ctx->textInput, (size_t)copyCount);
-                buffer[len + copyCount] = '\0';
+                DeleteRange(buffer, selStart, selEnd);
+                ctx->caret = selStart;
+                ctx->textSelStart = ctx->caret;
+                ctx->textSelEnd = ctx->caret;
+                len = (int)strlen(buffer);
+            }
+        }
+        if (ctrlDown && Input_IsKeyPressed(KEY_V))
+        {
+            if (hasSelection)
+            {
+                DeleteRange(buffer, selStart, selEnd);
+                ctx->caret = selStart;
+                ctx->textSelStart = ctx->caret;
+                ctx->textSelEnd = ctx->caret;
+                len = (int)strlen(buffer);
+                hasSelection = false;
+            }
+            int inserted = PasteFromClipboard(buffer, bufferSize, ctx->caret);
+            if (inserted > 0)
+            {
+                ctx->caret += inserted;
+                ctx->textSelStart = ctx->caret;
+                ctx->textSelEnd = ctx->caret;
+                len = (int)strlen(buffer);
+            }
+        }
+
+        if (!ctrlDown && ctx->textInputLen > 0)
+        {
+            if (hasSelection)
+            {
+                DeleteRange(buffer, selStart, selEnd);
+                ctx->caret = selStart;
+                ctx->textSelStart = ctx->caret;
+                ctx->textSelEnd = ctx->caret;
+                len = (int)strlen(buffer);
+            }
+            int inserted = InsertTextAt(buffer, bufferSize, ctx->caret, ctx->textInput, ctx->textInputLen);
+            if (inserted > 0)
+            {
+                ctx->caret += inserted;
+                ctx->textSelStart = ctx->caret;
+                ctx->textSelEnd = ctx->caret;
             }
         }
         if (ctx->keyBackspace)
         {
-            int len = (int)strlen(buffer);
-            if (len > 0)
-                buffer[len - 1] = '\0';
+            if (hasSelection)
+            {
+                DeleteRange(buffer, selStart, selEnd);
+                ctx->caret = selStart;
+                ctx->textSelStart = ctx->caret;
+                ctx->textSelEnd = ctx->caret;
+            }
+            else if (ctx->caret > 0)
+            {
+                DeleteRange(buffer, ctx->caret - 1, ctx->caret);
+                ctx->caret -= 1;
+                ctx->textSelStart = ctx->caret;
+                ctx->textSelEnd = ctx->caret;
+            }
         }
         if (ctx->keyEnter)
         {
             ctx->kbdId = 0;
+            ctx->selecting = false;
         }
     }
 
@@ -236,13 +412,40 @@ bool ImGuiLite_InputText(ImGuiLiteContext* ctx, const char* label, char* buffer,
     if (focused)
         base = Color{0.25f, 0.25f, 0.32f, 1.0f};
 
-    DrawRectangle(Rect{x, y, bw, bh}, base);
-    DrawRectangleLines(Rect{x, y, bw, bh}, 1, Color{0.6f, 0.6f, 0.7f, 1.0f});
+    Renderer_DrawRectangle(Rect{x, y, bw, bh}, base);
+    Renderer_DrawRectangleLines(Rect{x, y, bw, bh}, 1, Color{0.6f, 0.6f, 0.7f, 1.0f});
 
-    char labelText[128];
-    snprintf(labelText, sizeof(labelText), "%s: %s", label, buffer);
-    Renderer_DrawTextEx(labelText, x + 6.0f, y + 4.0f, 13.0f, Color{1, 1, 1, 1}, TEXT_STYLE_OUTLINE_SHADOW);
+    if (focused)
+    {
+        int selStart = MinInt(ctx->textSelStart, ctx->textSelEnd);
+        int selEnd = MaxInt(ctx->textSelStart, ctx->textSelEnd);
+        if (selStart != selEnd)
+        {
+            float selX = textStartX + (float)selStart * charW + caretOffset;
+            float selW = (float)(selEnd - selStart) * charW;
+            float maxW = (x + bw - 4.0f) - selX;
+            if (selW > maxW) selW = maxW;
+            if (selW > 0.0f)
+            {
+                Renderer_DrawRectangle(Rect{selX, y + 4.0f, selW, 14.0f}, Color{0.20f, 0.45f, 0.90f, 0.45f});
+            }
+        }
+    }
+
+    Renderer_DrawTextEx(label, labelStartX, y + 4.0f, fontSize, Color{1, 1, 1, 1}, TEXT_STYLE_OUTLINE_SHADOW);
+    Renderer_DrawTextEx(": ", labelStartX + (float)labelLen * charW, y + 4.0f, fontSize, Color{1, 1, 1, 1}, TEXT_STYLE_OUTLINE_SHADOW);
+    Renderer_DrawTextEx(buffer, textStartX, y + 4.0f, fontSize, Color{1, 1, 1, 1}, TEXT_STYLE_OUTLINE_SHADOW);
+
+    if (focused)
+    {
+        float caretX = textStartX + (float)ctx->caret * charW + caretOffset;
+        if (caretX < x + bw - 3.0f)
+        {
+            Renderer_DrawLineEx(Vec2{caretX, y + 4.0f}, Vec2{caretX, y + 18.0f}, 1.0f, Color{1.0f, 1.0f, 1.0f, 1.0f});
+        }
+    }
 
     ctx->cursorY += bh + ctx->padding;
     return focused;
 }
+

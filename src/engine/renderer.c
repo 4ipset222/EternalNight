@@ -1323,7 +1323,7 @@ static void DrawTextPass(const char* text, float x, float y, float fontSize, Col
     float scale = fontSize / (float)font->size;
     float pen_x = x;
     float pen_y = y;
-    float baseline = pen_y + (float)font->ascent * scale;
+    float baseline = floorf(pen_y + (float)font->ascent * scale + 0.5f);
     float line_step = (float)font->line_height * scale;
 
     int glyph_count = 0;
@@ -1366,7 +1366,7 @@ static void DrawTextPass(const char* text, float x, float y, float fontSize, Col
         {
             pen_x = x;
             pen_y += line_step;
-            baseline = pen_y + (float)font->ascent * scale;
+            baseline = floorf(pen_y + (float)font->ascent * scale + 0.5f);
             continue;
         }
 
@@ -1387,7 +1387,6 @@ static void DrawTextPass(const char* text, float x, float y, float fontSize, Col
             float xpos = pen_x + (float)g->bearingX * scale;
             float ypos = baseline - (float)g->bearingY * scale;
             xpos = floorf(xpos + 0.5f);
-            ypos = floorf(ypos + 0.5f);
             float w = (float)g->width * scale;
             float h = (float)g->height * scale;
 

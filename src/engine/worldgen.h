@@ -19,7 +19,10 @@ typedef enum
     TILE_STONE,
     TILE_SAND,
     TILE_WATER,
-    TILE_DEEP_WATER
+    TILE_DEEP_WATER,
+    TILE_SNOW,
+    TILE_ICE,
+    TILE_CAVE_ENTRANCE
 } TileType;
 
 typedef struct
@@ -51,6 +54,7 @@ typedef struct Mob Mob;
 typedef struct
 {
     int seed;
+    int isCave;
 
     int loadRadiusChunks;
     int chunkCapacity;
@@ -68,15 +72,19 @@ typedef struct
     float mobSpawnCooldown;
 } ForgeWorld;
 
-void Chunk_Generate(Chunk* chunk, int seed);
+void Chunk_Generate(Chunk* chunk, int seed, int isCave);
 
 ForgeWorld* World_Create(int loadRadiusChunks, int seed);
 void World_Destroy(ForgeWorld* world);
+void World_SetCaveMode(ForgeWorld* world, int isCave);
 
 void World_UpdateChunks(ForgeWorld* world, int centerChunkX, int centerChunkY);
 
 TileType World_GetTile(ForgeWorld* world, int x, int y);
 Vec4 World_GetTileColor(TileType type);
+int  World_IsTileSolid(TileType type);
+const char* World_GetBiomeName(ForgeWorld* world, int x, int y);
+void World_MoveWithCollision(ForgeWorld* world, float tileSize, float radius, float* ioX, float* ioY, float dx, float dy);
 
 #define WORLD_MAX_MOB_TYPES 16
 #define WORLD_DEFAULT_MOB_CAPACITY 128

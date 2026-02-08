@@ -8,9 +8,10 @@ class Player
 public:
     Player(float x, float y);
 
-    void Update(float dt);
+    void Update(float dt, float moveX, float moveY, ForgeWorld* world, float tileSize);
     void Draw() const;
     void DrawHP() const;
+    void DrawStamina() const;
     bool Attack(float dirX, float dirY);
     void SetWeaponSprite(Texture2D* sprite) { weaponSprite = sprite; }
     void SetPosition(float nx, float ny) { x = nx; y = ny; }
@@ -26,6 +27,8 @@ public:
 
     float GetHP() const { return hp; }
     void  SetHP(float health) { hp = health; }
+    float GetStamina() const { return stamina; }
+    float GetMaxStamina() const { return maxStamina; }
 
 private:
     float x;
@@ -35,6 +38,10 @@ private:
 
     float hp = 100.0f;
     float maxHP = 100.0f;
+    float stamina = 100.0f;
+    float maxStamina = 100.0f;
+    float staminaRegen = 25.0f;
+    float staminaAttackCost = 20.0f;
 
     Texture2D* weaponSprite = nullptr;
     float attackTimer = 0.0f;

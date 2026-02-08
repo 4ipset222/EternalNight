@@ -22,6 +22,7 @@ static void ResetClient(ServerClient* c)
     c->attackDirX = 1.0f;
     c->attackDirY = 0.0f;
     c->attackQueued = false;
+    c->attackBuffered = false;
     c->lastInputSeq = 0;
 }
 
@@ -114,10 +115,11 @@ bool Server_Init(ServerState* s, uint16_t port, int seed)
     s->cycleTimer = 0.0f;
     s->isNight = false;
     s->snapshotTimer = 0.0f;
+    s->world = NULL;
+    s->tileSize = 16.0f;
+    s->playerRadius = 8.0f;
 
-    // Local host occupies slot 0
-    s->clients[0].connected = true;
-    s->clients[0].id = 0;
+    // Dedicated server: no local player slot reserved
 
     return true;
 }
@@ -137,18 +139,12 @@ void Server_Shutdown(ServerState* s)
     Net_Shutdown();
 }
 
-void Server_SetLocalInput(ServerState* s, const NetInputState* in)
-{
-    if (!s || !in) return;
-    s->clients[0].input = *in;
-}
-
-void Server_SetLocalPosition(ServerState* s, float x, float y, float hp)
+void Server_SetWorld(ServerState* s, ForgeWorld* world, float tileSize, float playerRadius)
 {
     if (!s) return;
-    s->clients[0].x = x;
-    s->clients[0].y = y;
-    s->clients[0].hp = hp;
+    s->world = world;
+    s->tileSize = tileSize;
+    s->playerRadius = playerRadius;
 }
 
 static void HandleClientMessage(ServerState* s, ServerClient* c, uint8_t type, const uint8_t* payload, int payloadLen)
@@ -172,11 +168,24 @@ static void HandleClientMessage(ServerState* s, ServerClient* c, uint8_t type, c
             memcpy(&c->input.attackDirX, payload + offset, sizeof(float)); offset += sizeof(float);
             memcpy(&c->input.attackDirY, payload + offset, sizeof(float)); offset += sizeof(float);
             c->lastInputSeq = c->input.seq;
+
+            if (c->input.attack)
+            {
+                float dirLenSq = c->input.attackDirX * c->input.attackDirX + c->input.attackDirY * c->input.attackDirY;
+                if (dirLenSq > 0.0001f)
+                {
+                    float inv = 1.0f / sqrtf(dirLenSq);
+                    c->attackDirX = c->input.attackDirX * inv;
+                    c->attackDirY = c->input.attackDirY * inv;
+                    c->attackBaseAngle = atan2f(c->attackDirY, c->attackDirX);
+                    c->attackBuffered = true;
+                }
+            }
         }
     }
 }
 
-static void UpdatePlayer(ServerClient* p, float dt)
+static void UpdatePlayer(ServerState* s, ServerClient* p, float dt)
 {
     if (!p) return;
 
@@ -190,26 +199,32 @@ static void UpdatePlayer(ServerClient* p, float dt)
         my *= inv;
     }
 
-    p->x += mx * PLAYER_SPEED * dt;
-    p->y += my * PLAYER_SPEED * dt;
+    float dx = mx * PLAYER_SPEED * dt;
+    float dy = my * PLAYER_SPEED * dt;
+    float nx = p->x;
+    float ny = p->y;
+    if (s && s->world)
+    {
+        World_MoveWithCollision(s->world, s->tileSize, s->playerRadius, &nx, &ny, dx, dy);
+    }
+    else
+    {
+        nx += dx;
+        ny += dy;
+    }
+    p->x = nx;
+    p->y = ny;
 
     if (p->attackCooldownTimer > 0.0f)
         p->attackCooldownTimer -= dt;
 
-    if (p->input.attack && p->attackCooldownTimer <= 0.0f)
+    if (p->attackBuffered && p->attackCooldownTimer <= 0.0f)
     {
-        float dirLenSq = p->input.attackDirX * p->input.attackDirX + p->input.attackDirY * p->input.attackDirY;
-        if (dirLenSq > 0.0001f)
-        {
-            float inv = 1.0f / sqrtf(dirLenSq);
-            p->attackDirX = p->input.attackDirX * inv;
-            p->attackDirY = p->input.attackDirY * inv;
-            p->attackBaseAngle = atan2f(p->attackDirY, p->attackDirX);
-            p->isAttacking = true;
-            p->attackProgress = 0.0f;
-            p->attackCooldownTimer = ATTACK_COOLDOWN;
-            p->attackQueued = true;
-        }
+        p->isAttacking = true;
+        p->attackProgress = 0.0f;
+        p->attackCooldownTimer = ATTACK_COOLDOWN;
+        p->attackQueued = true;
+        p->attackBuffered = false;
     }
 
     if (p->isAttacking)
@@ -236,7 +251,7 @@ void Server_Update(ServerState* s, float dt)
             break;
 
         int slot = -1;
-        for (int i = 1; i < NET_MAX_PLAYERS; ++i)
+        for (int i = 0; i < NET_MAX_PLAYERS; ++i)
         {
             if (!s->clients[i].connected)
             {
@@ -261,7 +276,7 @@ void Server_Update(ServerState* s, float dt)
     }
 
     uint8_t temp[512];
-    for (int i = 1; i < NET_MAX_PLAYERS; ++i)
+    for (int i = 0; i < NET_MAX_PLAYERS; ++i)
     {
         ServerClient* c = &s->clients[i];
         if (!c->connected || !Net_IsValid(c->sock))
@@ -321,14 +336,14 @@ void Server_Update(ServerState* s, float dt)
     {
         if (!s->clients[i].connected)
             continue;
-        UpdatePlayer(&s->clients[i], dt);
+        UpdatePlayer(s, &s->clients[i], dt);
     }
 
     s->snapshotTimer += dt;
     if (s->snapshotTimer >= 0.033f)
     {
         s->snapshotTimer = 0.0f;
-        for (int i = 1; i < NET_MAX_PLAYERS; ++i)
+        for (int i = 0; i < NET_MAX_PLAYERS; ++i)
         {
             ServerClient* c = &s->clients[i];
             if (!c->connected || !Net_IsValid(c->sock))
@@ -337,7 +352,7 @@ void Server_Update(ServerState* s, float dt)
         }
     }
 
-    for (int i = 1; i < NET_MAX_PLAYERS; ++i)
+    for (int i = 0; i < NET_MAX_PLAYERS; ++i)
     {
         ServerClient* c = &s->clients[i];
         if (c->connected && Net_IsValid(c->sock))

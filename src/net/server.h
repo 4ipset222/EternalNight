@@ -3,6 +3,7 @@
 
 #include "net.h"
 #include "protocol.h"
+#include "engine/worldgen.h"
 #include <stdint.h>
 #include <stdbool.h>
 
@@ -31,6 +32,7 @@ typedef struct ServerClient
     float attackDirY;
     float attackBaseAngle;
     bool attackQueued;
+    bool attackBuffered;
     uint16_t lastInputSeq;
 } ServerClient;
 
@@ -47,12 +49,15 @@ typedef struct ServerState
 
     NetSocket listenSock;
     ServerClient clients[NET_MAX_PLAYERS];
+
+    ForgeWorld* world;
+    float tileSize;
+    float playerRadius;
 } ServerState;
 
 bool Server_Init(ServerState* s, uint16_t port, int seed);
 void Server_Shutdown(ServerState* s);
-void Server_SetLocalInput(ServerState* s, const NetInputState* in);
-void Server_SetLocalPosition(ServerState* s, float x, float y, float hp);
+void Server_SetWorld(ServerState* s, ForgeWorld* world, float tileSize, float playerRadius);
 void Server_Update(ServerState* s, float dt);
 int  Server_GetSnapshot(ServerState* s, NetPlayerState* outPlayers, int maxPlayers, bool* outIsNight, float* outCycleTimer);
 void Server_Broadcast(ServerState* s, const uint8_t* data, int len);

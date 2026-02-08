@@ -6,12 +6,28 @@ Player::Player(float x, float y)
 {
 }
 
-void Player::Update(float dt)
+void Player::Update(float dt, float moveX, float moveY, ForgeWorld* world, float tileSize)
 {
-    if (Input_IsKeyDown(KEY_W)) y -= speed * dt;
-    if (Input_IsKeyDown(KEY_S)) y += speed * dt;
-    if (Input_IsKeyDown(KEY_A)) x -= speed * dt;
-    if (Input_IsKeyDown(KEY_D)) x += speed * dt;
+    float mx = moveX;
+    float my = moveY;
+    float lenSq = mx * mx + my * my;
+    if (lenSq > 1.0f)
+    {
+        float inv = 1.0f / sqrtf(lenSq);
+        mx *= inv;
+        my *= inv;
+    }
+
+    float dx = mx * speed * dt;
+    float dy = my * speed * dt;
+    float radius = size * 0.45f;
+    World_MoveWithCollision(world, tileSize, radius, &x, &y, dx, dy);
+
+    if (stamina < maxStamina)
+    {
+        stamina += staminaRegen * dt;
+        if (stamina > maxStamina) stamina = maxStamina;
+    }
 
     if (attackTimer > 0.0f)
         attackTimer -= dt;
@@ -80,9 +96,33 @@ void Player::DrawHP() const
     Renderer_DrawRectangleLines(Rect{xPos, yPos, barWidth, barHeight}, 2.0f, Color{1.0f, 1.0f, 1.0f, 1.0f});
 }
 
+void Player::DrawStamina() const
+{
+    Renderer* renderer = GetGlobalRenderer();
+    if (!renderer) return;
+
+    float barWidth = 200.0f;
+    float barHeight = 18.0f;
+    float margin = 10.0f;
+    float gap = 6.0f;
+
+    float staminaPercent = stamina / maxStamina;
+    float filledWidth = barWidth * staminaPercent;
+
+    float xPos = renderer->width - barWidth - margin;
+    float yPos = renderer->height - barHeight - margin - (20.0f + gap);
+
+    Renderer_DrawText("ST", xPos - 30.0f, yPos + 2.0f, 14, Color{1,1,1,1});
+    Renderer_DrawRectangle(Rect{xPos, yPos, barWidth, barHeight}, Color{0.2f, 0.2f, 0.2f, 1.0f});
+    Renderer_DrawRectangle(Rect{xPos, yPos, filledWidth, barHeight}, Color{0.2f, 0.6f, 1.0f, 1.0f});
+    Renderer_DrawRectangleLines(Rect{xPos, yPos, barWidth, barHeight}, 2.0f, Color{1.0f, 1.0f, 1.0f, 1.0f});
+}
+
 bool Player::Attack(float dirX, float dirY)
 {
     if (attackCooldownTimer > 0.0f)
+        return false;
+    if (stamina < staminaAttackCost)
         return false;
 
     float lenSq = dirX * dirX + dirY * dirY;
@@ -97,6 +137,8 @@ bool Player::Attack(float dirX, float dirY)
     attackCooldownTimer = attackCooldown;
     attackProgress = 0.0f;
     isAttacking = true;
+    stamina -= staminaAttackCost;
+    if (stamina < 0.0f) stamina = 0.0f;
     return true;
 }
 

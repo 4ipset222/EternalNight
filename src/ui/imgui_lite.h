@@ -37,6 +37,11 @@ typedef struct ImGuiLiteContext
     float dragOffsetX;
     float dragOffsetY;
 
+    int caret;
+    int textSelStart;
+    int textSelEnd;
+    bool selecting;
+
     const char* textInput;
     int textInputLen;
     bool keyBackspace;
@@ -59,3 +64,4 @@ bool ImGuiLite_InputText(ImGuiLiteContext* ctx, const char* label, char* buffer,
 #endif
 
 #endif // __IMGUI_LITE_H__
+
