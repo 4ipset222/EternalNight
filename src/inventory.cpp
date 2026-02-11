@@ -1,5 +1,6 @@
 #include "Inventory.h"
 #include <cstdio>
+#include <algorithm>
 
 Inventory::Inventory()
 {
@@ -10,8 +11,29 @@ Inventory::Inventory()
         slots[i].used = false;
 }
 
-bool Inventory::AddItem(const std::string& name, Color color, Texture2D* sprite, ItemType type)
+bool Inventory::AddItem(const std::string& name, Color color, Texture2D* sprite, ItemType type, int tileType, int quantity)
 {
+    if (type == ITEM_BLOCK)
+    {
+        for (int i = 0; i < MAX_SLOTS; i++)
+        {
+            if (slots[i].used && slots[i].type == ITEM_BLOCK && slots[i].tileType == tileType)
+            {
+                int canAdd = 99 - slots[i].quantity;
+                if (canAdd > 0)
+                {
+                    int toAdd = std::min(canAdd, quantity);
+                    slots[i].quantity += toAdd;
+                    if (toAdd < quantity)
+                    {
+                        return AddItem(name, color, sprite, type, tileType, quantity - toAdd);
+                    }
+                    return true;
+                }
+            }
+        }
+    }
+    
     for (int i = 0; i < MAX_SLOTS; i++)
     {
         if (!slots[i].used)
@@ -20,7 +42,26 @@ bool Inventory::AddItem(const std::string& name, Color color, Texture2D* sprite,
             slots[i].color = color;
             slots[i].sprite = sprite;
             slots[i].type = type;
+            slots[i].tileType = tileType;
+            slots[i].quantity = (type == ITEM_BLOCK) ? quantity : 1;
             slots[i].used = true;
+            return true;
+        }
+    }
+    return false;
+}
+
+bool Inventory::RemoveItemQuantity(int index, int amount)
+{
+    if (index < 0 || index >= MAX_SLOTS) return false;
+    if (!slots[index].used) return false;
+    
+    if (slots[index].type == ITEM_BLOCK)
+    {
+        slots[index].quantity -= amount;
+        if (slots[index].quantity <= 0)
+        {
+            slots[index].used = false;
             return true;
         }
     }
@@ -57,6 +98,13 @@ void Inventory::Draw(float startX, float startY, float slotSize)
             else
             {
                 Renderer_DrawRectangle(itemRect, slots[i].color);
+            }
+
+            if (slots[i].type == ITEM_BLOCK && slots[i].quantity > 0)
+            {
+                char qtyStr[16];
+                snprintf(qtyStr, sizeof(qtyStr), "%d", slots[i].quantity);
+                Renderer_DrawText(qtyStr, slotRect.x + slotSize - 20, slotRect.y + slotSize - 18, 10, Color{1, 1, 1, 1});
             }
             //Renderer_DrawText(slots[i].name.c_str(), itemRect.x - 6, itemRect.y - 16, 12, Color{1,1,1,1});
         }

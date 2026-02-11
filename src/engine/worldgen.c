@@ -358,7 +358,73 @@ int World_PlayerAttack(ForgeWorld* world, float originX, float originY, float di
     return hits;
 }
 
-void Chunk_Generate(Chunk* chunk, int seed)
+static void GetBiomeData(int seed, float wx, float wy, float* out_height, float* out_temp, float* out_moisture)
+{
+    Perlin_Init(seed);
+
+    float scale = 70.0f;
+    float invScale = 1.0f / scale;
+
+    float nx = wx * invScale;
+    float ny = wy * invScale;
+
+    float h = FractalPerlin2D(nx, ny, 4, 0.5f);
+    float d = Perlin2D(nx * 2.2f, ny * 2.2f);
+    float v = h * 0.8f + d * 0.2f;
+
+    float continent = FractalPerlin2D(nx * 0.15f, ny * 0.15f, 2, 0.5f);
+    float oceanBias = (0.5f - continent) * 0.25f;
+    float height = v + oceanBias;
+
+    float temp = FractalPerlin2D(nx * 0.08f, ny * 0.08f, 2, 0.5f);
+    temp -= (height - 0.5f) * 0.6f;
+    if (temp < 0.0f) temp = 0.0f;
+    if (temp > 1.0f) temp = 1.0f;
+
+    float moisture = FractalPerlin2D(nx * 0.12f, ny * 0.12f, 3, 0.5f);
+
+    if (out_height) *out_height = height;
+    if (out_temp) *out_temp = temp;
+    if (out_moisture) *out_moisture = moisture;
+}
+
+const char* World_GetBiomeName(ForgeWorld* world, int x, int y)
+{
+    if (!world) return "Unknown";
+
+    float height, temp, moisture;
+    GetBiomeData(world->seed, (float)x, (float)y, &height, &temp, &moisture);
+
+    float oceanLevel = 0.38f;
+    float shallowWaterLevel = oceanLevel + 0.03f;
+    float beachLevel = oceanLevel + 0.06f;
+    float hillLevel = 0.62f;
+    float mountainLevel = 0.72f;
+    float coldTemp = 0.35f;
+    float hotTemp = 0.68f;
+
+    if (height < oceanLevel)
+        return "Deep Ocean";
+    else if (height < shallowWaterLevel)
+        return (temp < coldTemp) ? "Frozen Ocean" : "Shallow Ocean";
+    else if (height < beachLevel)
+        return (temp < coldTemp) ? "Snowy Beach" : "Sandy Beach";
+    else if (height > mountainLevel)
+        return (temp < 0.45f) ? "Snow Mountain" : "Stone Mountain";
+    else if (height > hillLevel)
+        return (temp < coldTemp) ? "Snowy Hills" : "Rocky Hills";
+    else
+    {
+        if (temp < coldTemp)
+            return "Frozen Tundra";
+        else if (temp > hotTemp && moisture < 0.45f)
+            return "Desert";
+        else
+            return (moisture > 0.6f) ? "Forest" : "Grassland";
+    }
+}
+
+void Chunk_Generate(Chunk* chunk, int seed, bool isCave, float waterAmount, float stoneAmount, float caveAmount)
 {
     Perlin_Init(seed);
 
@@ -372,6 +438,11 @@ void Chunk_Generate(Chunk* chunk, int seed)
     float mountainLevel = 0.72f;
     float coldTemp = 0.35f;
     float hotTemp = 0.68f;
+    
+    float waterModifier = waterAmount * 0.12f;
+    float adjustedOceanLevel = oceanLevel - 0.06f + waterModifier;
+    float adjustedShallowLevel = adjustedOceanLevel + 0.03f;
+    float adjustedBeachLevel = adjustedOceanLevel + 0.06f;
 
     int baseX = chunk->cx * CHUNK_SIZE;
     int baseY = chunk->cy * CHUNK_SIZE;
@@ -403,25 +474,43 @@ void Chunk_Generate(Chunk* chunk, int seed)
 
             Tile* tile = &chunk->tiles[y * CHUNK_SIZE + x];
 
-            if (height < oceanLevel)
+            if (height < adjustedOceanLevel)
             {
                 tile->type = TILE_DEEP_WATER;
             }
-            else if (height < shallowWaterLevel)
+            else if (height < adjustedShallowLevel)
             {
                 tile->type = (temp < coldTemp) ? TILE_ICE : TILE_WATER;
             }
-            else if (height < beachLevel)
+            else if (height < adjustedBeachLevel)
             {
                 tile->type = (temp < coldTemp) ? TILE_SNOW : TILE_SAND;
             }
             else if (height > mountainLevel)
             {
-                tile->type = (temp < 0.45f) ? TILE_SNOW : TILE_STONE;
+                float stoneProb = FractalPerlin2D(nx * 0.06f, ny * 0.06f, 1, 0.5f);
+                float stoneThreshold = 0.3f + stoneAmount * 0.3f;
+                if (stoneProb > stoneThreshold)
+                {
+                    tile->type = (temp < 0.45f) ? TILE_SNOW : TILE_STONE;
+                }
+                else
+                {
+                    tile->type = (temp < 0.45f) ? TILE_SNOW : TILE_DIRT;
+                }
             }
             else if (height > hillLevel)
             {
-                tile->type = (temp < coldTemp) ? TILE_SNOW : TILE_STONE;
+                float stoneProb = FractalPerlin2D(nx * 0.06f, ny * 0.06f, 1, 0.5f);
+                float stoneThreshold = 0.5f + stoneAmount * 0.2f;
+                if (stoneProb > stoneThreshold)
+                {
+                    tile->type = (temp < coldTemp) ? TILE_SNOW : TILE_STONE;
+                }
+                else
+                {
+                    tile->type = (temp < coldTemp) ? TILE_SNOW : TILE_DIRT;
+                }
             }
             else
             {
@@ -436,6 +525,16 @@ void Chunk_Generate(Chunk* chunk, int seed)
                 else
                 {
                     tile->type = (moisture > 0.6f) ? TILE_GRASS : TILE_DIRT;
+                }
+            }
+
+            if (!isCave && tile->type == TILE_STONE && moisture > 0.3f && height > hillLevel * 0.8f)
+            {
+                float caveProb = FractalPerlin2D(nx * 0.05f, ny * 0.05f, 1, 0.5f);
+                float caveThreshold = 0.8f - caveAmount * 0.5f;
+                if (caveProb > caveThreshold)
+                {
+                    tile->type = TILE_CAVE_ENTRANCE;
                 }
             }
         }
@@ -467,6 +566,12 @@ ForgeWorld* World_Create(int loadRadiusChunks, int seed)
         free(world);
         return NULL;
     }
+
+    world->caveEntranceX = 0.0f;
+    world->caveEntranceY = 0.0f;
+    world->waterAmount = 0.5f;
+    world->stoneAmount = 0.5f;
+    world->caveAmount = 0.5f;
 
     MobArchetype orange = {0};
     strncpy(orange.name, "orange_rect", sizeof(orange.name) - 1);
@@ -504,6 +609,107 @@ void World_Destroy(ForgeWorld* world)
     }
 }
 
+int World_CheckCaveEntrance(ForgeWorld* world, float playerX, float playerY, float radius)
+{
+    if (!world) return 0;
+
+    float tileSize = 16.0f;
+    int px = (int)floorf(playerX / tileSize);
+    int py = (int)floorf(playerY / tileSize);
+    
+    /* Check tiles around player for cave entrance */
+    int checkRadius = (int)ceilf(radius / tileSize) + 1;
+    for (int dy = -checkRadius; dy <= checkRadius; dy++)
+    {
+        for (int dx = -checkRadius; dx <= checkRadius; dx++)
+        {
+            int tx = px + dx;
+            int ty = py + dy;
+            TileType tile = World_GetTile(world, tx, ty);
+            if (tile == TILE_CAVE_ENTRANCE)
+            {
+                float dx_f = (float)(tx * (int)tileSize + (int)(tileSize * 0.5f)) - playerX;
+                float dy_f = (float)(ty * (int)tileSize + (int)(tileSize * 0.5f)) - playerY;
+                float distSq = dx_f * dx_f + dy_f * dy_f;
+                if (distSq <= radius * radius)
+                    return 1;
+            }
+        }
+    }
+    return 0;
+}
+
+void World_SaveCaveEntrance(ForgeWorld* world, float x, float y)
+{
+    if (!world) return;
+    world->caveEntranceX = x;
+    world->caveEntranceY = y;
+}
+
+void World_RestoreCaveExit(ForgeWorld* world, float* outX, float* outY)
+{
+    if (!world || !outX || !outY) return;
+    *outX = world->caveEntranceX;
+    *outY = world->caveEntranceY;
+}
+
+void World_SetCaveMode(ForgeWorld* world, int isCave)
+{
+    if (!world) return;
+
+    if (world->isCave == isCave)
+        return;
+
+    world->isCave = isCave;
+
+    for (int i = 0; i < world->chunkCapacity; i++)
+    {
+        if (world->chunkMap[i].state == 1 && world->chunkMap[i].chunk)
+            free(world->chunkMap[i].chunk);
+
+        world->chunkMap[i].state = 0;
+        world->chunkMap[i].chunk = NULL;
+        world->chunkMap[i].key = 0;
+    }
+
+    world->chunkCount = 0;
+}
+
+void World_ReloadChunks(ForgeWorld* world)
+{
+    if (!world) return;
+
+    for (int i = 0; i < world->chunkCapacity; i++)
+    {
+        if (world->chunkMap[i].state == 1 && world->chunkMap[i].chunk)
+            free(world->chunkMap[i].chunk);
+
+        world->chunkMap[i].state = 0;
+        world->chunkMap[i].chunk = NULL;
+        world->chunkMap[i].key = 0;
+    }
+
+    world->chunkCount = 0;
+}
+
+void World_SetWaterAmount(ForgeWorld* world, float amount)
+{
+    if (!world) return;
+    world->waterAmount = amount < 0.0f ? 0.0f : (amount > 1.0f ? 1.0f : amount);
+}
+
+void World_SetStoneAmount(ForgeWorld* world, float amount)
+{
+    if (!world) return;
+    world->stoneAmount = amount < 0.0f ? 0.0f : (amount > 1.0f ? 1.0f : amount);
+}
+
+void World_SetCaveAmount(ForgeWorld* world, float amount)
+{
+    if (!world) return;
+    world->caveAmount = amount < 0.0f ? 0.0f : (amount > 1.0f ? 1.0f : amount);
+}
+
 void World_UpdateChunks(ForgeWorld* world, int centerChunkX, int centerChunkY)
 {
     int r = world->loadRadiusChunks;
@@ -512,21 +718,8 @@ void World_UpdateChunks(ForgeWorld* world, int centerChunkX, int centerChunkY)
     int minCy = centerChunkY - r;
     int maxCy = centerChunkY + r;
 
-    for (int i = 0; i < world->chunkCapacity; i++)
-    {
-        if (world->chunkMap[i].state != 1 || world->chunkMap[i].chunk == NULL)
-            continue;
-        Chunk* c = world->chunkMap[i].chunk;
-        int cx = c->cx, cy = c->cy;
-        if (cx < minCx || cx > maxCx || cy < minCy || cy > maxCy)
-        {
-            world->chunkMap[i].key = 0;
-            world->chunkMap[i].chunk = NULL;
-            world->chunkMap[i].state = 2; /* tombstone */
-            world->chunkCount--;
-            free(c);
-        }
-    }
+    /* Don't unload chunks - keep them in memory for persistence */
+    /* Chunks remain loaded once generated */
 
     int loadedThisUpdate = 0;
     for (int cy = minCy; cy <= maxCy; cy++)
@@ -545,7 +738,7 @@ void World_UpdateChunks(ForgeWorld* world, int centerChunkX, int centerChunkY)
             chunk->cx = cx;
             chunk->cy = cy;
             chunk->generated = 0;
-            Chunk_Generate(chunk, world->seed);
+            Chunk_Generate(chunk, world->seed, world->isCave, world->waterAmount, world->stoneAmount, world->caveAmount);
             if (!World_InsertChunk(world, cx, cy, chunk))
                 free(chunk);
             else
@@ -572,7 +765,7 @@ TileType World_GetTile(ForgeWorld* world, int x, int y)
         newChunk->cx = cx;
         newChunk->cy = cy;
         newChunk->generated = 0;
-        Chunk_Generate(newChunk, world->seed);
+        Chunk_Generate(newChunk, world->seed, world->isCave, world->waterAmount, world->stoneAmount, world->caveAmount);
 
         if (!World_InsertChunk(world, cx, cy, newChunk))
         {
@@ -584,7 +777,7 @@ TileType World_GetTile(ForgeWorld* world, int x, int y)
     }
 
     if (!chunk->generated)
-        Chunk_Generate(chunk, world->seed);
+        Chunk_Generate(chunk, world->seed, world->isCave, world->waterAmount, world->stoneAmount, world->caveAmount);
 
     int lx = x - cx * CHUNK_SIZE;
     int ly = y - cy * CHUNK_SIZE;
@@ -594,19 +787,64 @@ TileType World_GetTile(ForgeWorld* world, int x, int y)
     return chunk->tiles[ly * CHUNK_SIZE + lx].type;
 }
 
+int World_SetTile(ForgeWorld* world, int x, int y, TileType type)
+{
+    if (!world) return 0;
+    
+    int cx = (int)(x < 0 ? (x - CHUNK_SIZE + 1) / CHUNK_SIZE : x / CHUNK_SIZE);
+    int cy = (int)(y < 0 ? (y - CHUNK_SIZE + 1) / CHUNK_SIZE : y / CHUNK_SIZE);
+
+    Chunk* chunk = World_GetChunk(world, cx, cy);
+    if (!chunk)
+    {
+        if (world->chunkCount >= world->chunkCapacity)
+            return 0;
+
+        Chunk* newChunk = malloc(sizeof(Chunk));
+        if (!newChunk)
+            return 0;
+
+        newChunk->cx = cx;
+        newChunk->cy = cy;
+        newChunk->generated = 0;
+        Chunk_Generate(newChunk, world->seed, world->isCave, world->waterAmount, world->stoneAmount, world->caveAmount);
+
+        if (!World_InsertChunk(world, cx, cy, newChunk))
+        {
+            free(newChunk);
+            return 0;
+        }
+
+        chunk = newChunk;
+    }
+
+    int lx = x - cx * CHUNK_SIZE;
+    int ly = y - cy * CHUNK_SIZE;
+    if (lx < 0) lx += CHUNK_SIZE;
+    if (ly < 0) ly += CHUNK_SIZE;
+
+    if (lx >= 0 && lx < CHUNK_SIZE && ly >= 0 && ly < CHUNK_SIZE)
+    {
+        chunk->tiles[ly * CHUNK_SIZE + lx].type = type;
+        return 1;
+    }
+    return 0;
+}
+
 Vec4 World_GetTileColor(TileType type)
 {
     switch (type)
     {
-        case TILE_EMPTY:      return (Vec4){0.1f, 0.1f, 0.1f, 1.0f};
-        case TILE_GRASS:      return (Vec4){0.2f, 0.8f, 0.2f, 1.0f};
-        case TILE_DIRT:       return (Vec4){0.6f, 0.4f, 0.2f, 1.0f};
-        case TILE_STONE:      return (Vec4){0.5f, 0.5f, 0.5f, 1.0f};
-        case TILE_SAND:       return (Vec4){0.9f, 0.8f, 0.4f, 1.0f};
-        case TILE_WATER:      return (Vec4){0.2f, 0.6f, 1.0f, 1.0f};
-        case TILE_DEEP_WATER: return (Vec4){0.1f, 0.4f, 0.8f, 1.0f};
-        case TILE_SNOW:       return (Vec4){0.92f, 0.95f, 0.98f, 1.0f};
-        case TILE_ICE:        return (Vec4){0.7f, 0.9f, 1.0f, 1.0f};
-        default:              return (Vec4){1.0f, 0.0f, 1.0f, 1.0f};
+        case TILE_EMPTY:           return (Vec4){0.1f, 0.1f, 0.1f, 1.0f};
+        case TILE_GRASS:           return (Vec4){0.2f, 0.8f, 0.2f, 1.0f};
+        case TILE_DIRT:            return (Vec4){0.6f, 0.4f, 0.2f, 1.0f};
+        case TILE_STONE:           return (Vec4){0.5f, 0.5f, 0.5f, 1.0f};
+        case TILE_SAND:            return (Vec4){0.9f, 0.8f, 0.4f, 1.0f};
+        case TILE_WATER:           return (Vec4){0.2f, 0.6f, 1.0f, 1.0f};
+        case TILE_DEEP_WATER:      return (Vec4){0.1f, 0.4f, 0.8f, 1.0f};
+        case TILE_SNOW:            return (Vec4){0.92f, 0.95f, 0.98f, 1.0f};
+        case TILE_ICE:             return (Vec4){0.7f, 0.9f, 1.0f, 1.0f};
+        case TILE_CAVE_ENTRANCE:   return (Vec4){0.2f, 0.2f, 0.15f, 1.0f};
+        default:                   return (Vec4){1.0f, 0.0f, 1.0f, 1.0f};
     }
 }

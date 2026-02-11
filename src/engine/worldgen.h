@@ -70,17 +70,29 @@ typedef struct
     int mobCount;
     int mobCapacity;
     float mobSpawnCooldown;
+
+    float caveEntranceX;
+    float caveEntranceY;
+    
+    float waterAmount;
+    float stoneAmount;
+    float caveAmount;
 } ForgeWorld;
 
-void Chunk_Generate(Chunk* chunk, int seed, int isCave);
+void Chunk_Generate(Chunk* chunk, int seed, int isCave, float waterAmount, float stoneAmount, float caveAmount);
 
 ForgeWorld* World_Create(int loadRadiusChunks, int seed);
 void World_Destroy(ForgeWorld* world);
+void World_SetWaterAmount(ForgeWorld* world, float amount);
+void World_SetStoneAmount(ForgeWorld* world, float amount);
+void World_SetCaveAmount(ForgeWorld* world, float amount);
 void World_SetCaveMode(ForgeWorld* world, int isCave);
+void World_ReloadChunks(ForgeWorld* world);
 
 void World_UpdateChunks(ForgeWorld* world, int centerChunkX, int centerChunkY);
 
 TileType World_GetTile(ForgeWorld* world, int x, int y);
+int  World_SetTile(ForgeWorld* world, int x, int y, TileType type);
 Vec4 World_GetTileColor(TileType type);
 int  World_IsTileSolid(TileType type);
 const char* World_GetBiomeName(ForgeWorld* world, int x, int y);
@@ -119,6 +131,11 @@ int  World_PlayerAttack(ForgeWorld* world, float originX, float originY, float d
 
 const Mob* World_GetMobs(const ForgeWorld* world, int* outCount);
 const MobArchetype* World_GetMobArchetypes(const ForgeWorld* world, int* outCount);
+
+/* Cave entrance management */
+int  World_CheckCaveEntrance(ForgeWorld* world, float playerX, float playerY, float radius);
+void World_SaveCaveEntrance(ForgeWorld* world, float x, float y);
+void World_RestoreCaveExit(ForgeWorld* world, float* outX, float* outY);
 
 #ifdef __cplusplus
 }

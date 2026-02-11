@@ -74,6 +74,7 @@ typedef enum TextStyle
 } TextStyle;
 
 Texture2D* LoadTexture(const char* path);
+void UnloadTexture(Texture2D* texture);
 
 void SetGlobalRenderer(Renderer* r);
 Renderer* GetGlobalRenderer(void);

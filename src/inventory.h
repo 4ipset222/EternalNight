@@ -7,7 +7,8 @@
 enum ItemType
 {
     ITEM_MISC = 0,
-    ITEM_WEAPON = 1
+    ITEM_WEAPON = 1,
+    ITEM_BLOCK = 2
 };
 
 struct Item
@@ -17,6 +18,8 @@ struct Item
     Texture2D* sprite = nullptr;
     ItemType type = ITEM_MISC;
     bool used = false;
+    int quantity = 0;
+    int tileType = -1;
 };
 
 class Inventory
@@ -27,7 +30,7 @@ public:
 
     Inventory();
 
-    bool AddItem(const std::string& name, Color color, Texture2D* sprite = nullptr, ItemType type = ITEM_MISC);
+    bool AddItem(const std::string& name, Color color, Texture2D* sprite = nullptr, ItemType type = ITEM_MISC, int tileType = -1, int quantity = 1);
     void RemoveItem(int index);
     void Draw(float startX, float startY, float slotSize = 32.0f);
 
@@ -40,6 +43,7 @@ public:
             return &slots[selectedSlot]; 
         return nullptr;
     }
+    bool RemoveItemQuantity(int index, int amount = 1);
 
 private:
     Item slots[MAX_SLOTS];

@@ -1,52 +1,14 @@
 #ifndef __IMGUI_LITE_H__
 #define __IMGUI_LITE_H__
 
-#include "engine/forge.h"
+#include "eternal_ui.h"
 
 #ifdef __cplusplus
 extern "C"
 {
 #endif
 
-typedef struct ImGuiLiteContext
-{
-    float mouseX;
-    float mouseY;
-    bool mouseDown;
-    bool mousePressed;
-    bool mouseReleased;
-
-    bool wantsMouse;
-    bool wantsKeyboard;
-
-    int hotId;
-    int activeId;
-    int kbdId;
-
-    float cursorX;
-    float cursorY;
-    float winX;
-    float winY;
-    float winW;
-    float winH;
-    float rowHeight;
-    float padding;
-    bool inWindow;
-
-    bool dragging;
-    float dragOffsetX;
-    float dragOffsetY;
-
-    int caret;
-    int textSelStart;
-    int textSelEnd;
-    bool selecting;
-
-    const char* textInput;
-    int textInputLen;
-    bool keyBackspace;
-    bool keyEnter;
-} ImGuiLiteContext;
+typedef EternalUIContext ImGuiLiteContext;
 
 void ImGuiLite_BeginFrame(ImGuiLiteContext* ctx);
 void ImGuiLite_EndFrame(ImGuiLiteContext* ctx);

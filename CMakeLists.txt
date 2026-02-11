@@ -64,8 +64,22 @@ add_executable(EternalNight
     src/main.cpp
     src/player.cpp
     src/player.h
+    src/game_input.cpp
+    src/game_input.h
+    src/game_logic.cpp
+    src/game_logic.h
+    src/game_render.cpp
+    src/game_render.h
+    src/multiplayer.cpp
+    src/multiplayer.h
+    src/ui/eternal_ui.cpp
+    src/ui/eternal_ui.h
     src/ui/imgui_lite.cpp
     src/ui/imgui_lite.h
+    src/ui/main_menu.cpp
+    src/ui/main_menu.h
+    src/ui/menu_background.cpp
+    src/ui/menu_background.h
     src/ui/multiplayer_ui.cpp
     src/ui/multiplayer_ui.h
     src/multiplayer_types.h

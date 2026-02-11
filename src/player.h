@@ -25,6 +25,8 @@ public:
     float GetAttackDamage() const { return attackDamage; }
     float GetAttackArcCos() const { return attackArcCos; }
 
+    void SetX(float nx) { x = nx; }
+    void SetY(float ny) { y = ny; }
     float GetHP() const { return hp; }
     void  SetHP(float health) { hp = health; }
     float GetStamina() const { return stamina; }

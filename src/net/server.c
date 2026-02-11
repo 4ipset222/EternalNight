@@ -119,8 +119,6 @@ bool Server_Init(ServerState* s, uint16_t port, int seed)
     s->tileSize = 16.0f;
     s->playerRadius = 8.0f;
 
-    // Dedicated server: no local player slot reserved
-
     return true;
 }
 

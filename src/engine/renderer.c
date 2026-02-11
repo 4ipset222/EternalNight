@@ -293,6 +293,15 @@ Texture2D* LoadTexture(const char* path)
     return texture;
 }
 
+void UnloadTexture(Texture2D* texture)
+{
+    if (texture)
+    {
+        glDeleteTextures(1, &texture->id);
+        free(texture);
+    }
+}
+
 Renderer* Renderer_Create(Window* window)
 {
     Renderer* r = malloc(sizeof(Renderer));
