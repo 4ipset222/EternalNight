@@ -169,7 +169,7 @@ void MenuBackground::Draw()
     if (frame.renderTexture.texture.id > 0)
     {
         Rect src = {0, 0, (float)frameWidth, (float)frameHeight};
-        Rect dst = {frame.x, frame.y, (float)frameWidth, (float)frameHeight};
+        Rect dst = {0, 0, (float)renderer->width, (float)renderer->height};
         Color tint = {1.0f, 1.0f, 1.0f, frame.opacity};
         Renderer_DrawTexturePro(frame.renderTexture.texture, src, dst, Vec2{0, 0}, 0.0f, tint);
     }

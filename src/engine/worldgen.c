@@ -524,7 +524,7 @@ void Chunk_Generate(Chunk* chunk, int seed, bool isCave, float waterAmount, floa
                 }
                 else
                 {
-                    tile->type = (moisture > 0.6f) ? TILE_GRASS : TILE_DIRT;
+                    tile->type = (moisture > 0.35f) ? TILE_GRASS : TILE_DIRT;
                 }
             }
 

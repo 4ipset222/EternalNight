@@ -67,8 +67,8 @@ int main(int argc, char** argv)
     Player player(0.0f, 0.0f);
 
     Inventory inventory;
-    Texture2D* itemSprite = LoadTexture("test.png");
-    Texture2D* swordSprite = LoadTexture("kuzne4ik_sword.png");
+    Texture2D* itemSprite = LoadTexture("assets/test.png");
+    Texture2D* swordSprite = LoadTexture("assets/kuzne4ik_sword.png");
     inventory.AddItem("fimoz", Color{1,0,0,1}, itemSprite, ITEM_MISC);
     inventory.AddItem("giga fimoz", Color{0,1,0,1}, itemSprite, ITEM_MISC);
     inventory.AddItem("kuzne4ik sword", Color{1,1,1,1}, swordSprite, ITEM_WEAPON);

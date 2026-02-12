@@ -1302,7 +1302,7 @@ static Font* GetDefaultFont(void)
     if (!g_default_font && !g_default_font_attempted)
     {
         g_default_font_attempted = true;
-        g_default_font = LoadFontTTF("arial.ttf", 32);
+        g_default_font = LoadFontTTF("assets/arial.ttf", 56);
         if (!g_default_font)
         {
             dbg_msg("Renderer", "Default font load failed (arial.ttf)");
