@@ -1,5 +1,8 @@
 #include <algorithm>
 #include <cstdlib>
+#include <cstdio>
+#include <cmath>
+#include <cstring>
 #include <vector>
 #include "engine/forge.h"
 #include "inventory.h"
@@ -93,6 +96,11 @@ int main(int argc, char** argv)
     float attackBufferTimer = 0.0f;
     float lastAttackDirX = 1.0f;
     float lastAttackDirY = 0.0f;
+    const float RESPAWN_TIME_SECONDS = 5.0f;
+    bool singleplayerDead = false;
+    float singleplayerRespawnTimer = 0.0f;
+    bool localDead = false;
+    float localRespawnTimer = 0.0f;
 
     bool showDebug = false;
     bool prevF3 = false;
@@ -139,6 +147,11 @@ int main(int argc, char** argv)
                 currentGameState = STATE_PLAYING;
                 player.SetX(0.0f);
                 player.SetY(0.0f);
+                player.SetHP(100.0f);
+                singleplayerDead = false;
+                singleplayerRespawnTimer = 0.0f;
+                localDead = false;
+                localRespawnTimer = 0.0f;
             }
             else if (newState == STATE_EXITING)
                 break;
@@ -166,9 +179,11 @@ int main(int argc, char** argv)
                          uiMouseY >= uiY && uiMouseY <= uiY + uiH;
         bool uiBlockInput = mouseInUi || ui.kbdId != 0 || ui.activeId != 0;
 
-        HandleBlockPlacement(player, camera, renderer, world, inventory, uiBlockInput);
+        bool blockGameplayInput = localDead;
+        if (!blockGameplayInput)
+            HandleBlockPlacement(player, camera, renderer, world, inventory, uiBlockInput);
 
-        NetInputState netInput = GetNetInput();
+        NetInputState netInput = blockGameplayInput ? NetInputState{} : GetNetInput();
 
         float halfW = (float)renderer->width * 0.5f;
         float halfH = (float)renderer->height * 0.5f;
@@ -179,14 +194,18 @@ int main(int argc, char** argv)
 
         if (!multiplayerActive)
         {
-            UpdateSingleplayerGame(player, world, camera, inventory, weaponSprite, uiBlockInput, dt);
+            if (!singleplayerDead)
+                UpdateSingleplayerGame(player, world, camera, inventory, weaponSprite, uiBlockInput, dt);
         }
         else
         {
-            UpdateMultiplayerInput(player, world, netInput, weaponSprite, uiBlockInput,
-                                  attackBufferTimer, lastAttackDirX, lastAttackDirY, camera, dt);
+            if (!localDead)
+            {
+                UpdateMultiplayerInput(player, world, netInput, weaponSprite, uiBlockInput,
+                                      attackBufferTimer, lastAttackDirX, lastAttackDirY, camera, dt);
+            }
 
-            if (mpMode == MpMode::Client && clientReady)
+            if (mpMode == MpMode::Client && clientReady && !localDead)
                 UpdateClientMovement(player, world, netInput, inputSeq, pendingInputs, dt);
 
             if (mpMode == MpMode::Host && serverReady)
@@ -224,8 +243,9 @@ int main(int argc, char** argv)
                 snapCount = Client_GetSnapshot(&client, snap, NET_MAX_PLAYERS, &snapNight, &snapCycle);
             }
 
-            ProcessNetworkSnapshot(snap, snapCount, localId, player, remotePlayers, 
-                                  pendingInputs, world, swordSprite, mpMode, dt);
+            ProcessNetworkSnapshot(snap, snapCount, localId, player, remotePlayers,
+                                  pendingInputs, world, swordSprite, mpMode, dt,
+                                  localDead, localRespawnTimer);
 
             isNight = snapNight;
             cycleTimer = snapCycle;
@@ -243,9 +263,30 @@ int main(int argc, char** argv)
         }
         else
         {
+            if (!singleplayerDead && playerHP <= 0.0f)
+            {
+                singleplayerDead = true;
+                singleplayerRespawnTimer = RESPAWN_TIME_SECONDS;
+                playerHP = 0.0f;
+                player.SetHP(0.0f);
+            }
+            if (singleplayerDead)
+            {
+                singleplayerRespawnTimer -= dt;
+                if (singleplayerRespawnTimer <= 0.0f)
+                {
+                    singleplayerRespawnTimer = 0.0f;
+                    singleplayerDead = false;
+                    player.SetPosition(0.0f, 0.0f);
+                    playerHP = 100.0f;
+                }
+            }
+
             world->Update(dt, isNight ? 1 : 0, player.GetX(), player.GetY(),
-                         player.GetX(), player.GetY(), player.GetSize(), &playerHP, true);
+                         player.GetX(), player.GetY(), player.GetSize(), &playerHP, !singleplayerDead);
             player.SetHP(playerHP);
+            localDead = singleplayerDead;
+            localRespawnTimer = singleplayerRespawnTimer;
         }
 
         UpdateCaveState(player, world, inCave, caveEntranceX, caveEntranceY, multiplayerActive);
@@ -317,6 +358,36 @@ int main(int argc, char** argv)
         inventory.Draw(10.0f, (float)renderer->height - 50.0f, 32.0f);
         player.DrawStamina();
         player.DrawHP();
+        if (localDead)
+        {
+            float pulse = 0.45f + 0.15f * sinf((float)GetTime() * 6.0f);
+            Renderer_DrawRectangle(
+                Rect{0.0f, 0.0f, (float)renderer->width, (float)renderer->height},
+                Color{0.8f, 0.0f, 0.0f, pulse}
+            );
+
+            char respawnText[96];
+            snprintf(respawnText, sizeof(respawnText), "Respawn in %.1f sec",
+                     (localRespawnTimer > 0.0f) ? localRespawnTimer : 0.0f);
+            float centerX = (float)renderer->width * 0.5f;
+            float centerY = (float)renderer->height * 0.5f;
+
+            auto estimateTextWidth = [](const char* text, float fontSize) -> float
+            {
+                return (float)std::strlen(text) * fontSize * 0.56f;
+            };
+
+            const char* diedText = "YOU DIED";
+            float diedFontSize = 54.0f;
+            float respawnFontSize = 30.0f;
+            float diedX = centerX - estimateTextWidth(diedText, diedFontSize) * 0.5f;
+            float respawnX = centerX - estimateTextWidth(respawnText, respawnFontSize) * 0.5f;
+
+            Renderer_DrawTextEx(diedText, diedX, centerY - 40.0f, diedFontSize,
+                               Color{1.0f, 1.0f, 1.0f, 1.0f}, TEXT_STYLE_OUTLINE_SHADOW);
+            Renderer_DrawTextEx(respawnText, respawnX, centerY + 20.0f, respawnFontSize,
+                               Color{1.0f, 1.0f, 1.0f, 1.0f}, TEXT_STYLE_OUTLINE_SHADOW);
+        }
 
         if (uiResult.hostClicked)
         {

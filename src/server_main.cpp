@@ -49,7 +49,7 @@ int main(int argc, char** argv)
 
         for (int i = 0; i < NET_MAX_PLAYERS; ++i)
         {
-            if (!server.clients[i].connected)
+            if (!server.clients[i].connected || server.clients[i].isDead)
                 continue;
             px[pcount] = server.clients[i].x;
             py[pcount] = server.clients[i].y;

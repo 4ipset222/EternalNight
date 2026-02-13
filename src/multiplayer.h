@@ -39,7 +39,8 @@ void UpdateClientMovement(Player& player, World* world, NetInputState& netInput,
 void ProcessNetworkSnapshot(const NetPlayerState* snap, int snapCount, uint8_t localId,
                            Player& player, std::vector<RemotePlayer>& remotePlayers,
                            std::vector<PendingInput>& pendingInputs, World* world,
-                           Texture2D* swordSprite, MpMode mpMode, float dt);
+                           Texture2D* swordSprite, MpMode mpMode, float dt,
+                           bool& localIsDead, float& localRespawnTimer);
 
 void UpdateHostMobs(Player& player, World* world, ServerState& server, 
                    float& mobSyncTimer, bool isNight, float dt);

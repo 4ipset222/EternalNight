@@ -83,7 +83,8 @@ void UpdateClientMovement(Player& player, World* world, NetInputState& netInput,
 void ProcessNetworkSnapshot(const NetPlayerState* snap, int snapCount, uint8_t localId,
                            Player& player, std::vector<RemotePlayer>& remotePlayers,
                            std::vector<PendingInput>& pendingInputs, World* world,
-                           Texture2D* swordSprite, MpMode mpMode, float dt)
+                           Texture2D* swordSprite, MpMode mpMode, float dt,
+                           bool& localIsDead, float& localRespawnTimer)
 {
     bool seen[NET_MAX_PLAYERS] = {};
     float smooth = std::clamp(dt * 10.0f, 0.0f, 1.0f);
@@ -99,6 +100,8 @@ void ProcessNetworkSnapshot(const NetPlayerState* snap, int snapCount, uint8_t l
             player.SetHP(ps.hp);
             player.SetAttackState(ps.isAttacking != 0, ps.attackProgress, ps.attackDirX, ps.attackDirY, ps.attackBaseAngle);
             player.SetColor(ColorForId(ps.id));
+            localIsDead = (ps.isDead != 0);
+            localRespawnTimer = ps.respawnTimer;
 
             if (mpMode == MpMode::Client)
             {
@@ -163,7 +166,7 @@ void UpdateHostMobs(Player& player, World* world, ServerState& server,
 
     for (int i = 0; i < NET_MAX_PLAYERS; ++i)
     {
-        if (!server.clients[i].connected)
+        if (!server.clients[i].connected || server.clients[i].isDead)
             continue;
         px[pcount] = server.clients[i].x;
         py[pcount] = server.clients[i].y;

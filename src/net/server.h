@@ -24,6 +24,8 @@ typedef struct ServerClient
     float x;
     float y;
     float hp;
+    bool isDead;
+    float respawnTimer;
 
     bool isAttacking;
     float attackProgress;

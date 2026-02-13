@@ -32,13 +32,15 @@ static void HandleSnapshot(ClientState* c, const uint8_t* payload, int payloadLe
 
     for (uint8_t i = 0; i < count; ++i)
     {
-        if (offset + 2 + (int)(sizeof(float) * 7) + (int)sizeof(uint16_t) > payloadLen)
+        if (offset + 3 + (int)(sizeof(float) * 8) + (int)sizeof(uint16_t) > payloadLen)
             break;
         NetPlayerState* p = &c->players[c->playerCount++];
         p->id = payload[offset++];
         memcpy(&p->x, payload + offset, sizeof(float)); offset += sizeof(float);
         memcpy(&p->y, payload + offset, sizeof(float)); offset += sizeof(float);
         memcpy(&p->hp, payload + offset, sizeof(float)); offset += sizeof(float);
+        p->isDead = payload[offset++];
+        memcpy(&p->respawnTimer, payload + offset, sizeof(float)); offset += sizeof(float);
         p->isAttacking = payload[offset++];
         memcpy(&p->attackProgress, payload + offset, sizeof(float)); offset += sizeof(float);
         memcpy(&p->attackDirX, payload + offset, sizeof(float)); offset += sizeof(float);

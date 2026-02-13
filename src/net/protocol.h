@@ -3,7 +3,7 @@
 
 #include <stdint.h>
 
-#define NET_PROTOCOL_VERSION 1
+#define NET_PROTOCOL_VERSION 2
 #define NET_MAX_PLAYERS 8
 #define NET_MAX_MOBS 64
 
@@ -22,6 +22,8 @@ typedef struct NetPlayerState
     float x;
     float y;
     float hp;
+    uint8_t isDead;
+    float respawnTimer;
     uint8_t isAttacking;
     float attackProgress;
     float attackDirX;

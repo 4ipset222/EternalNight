@@ -5,6 +5,8 @@
 static const float PLAYER_SPEED = 200.0f;
 static const float ATTACK_DURATION = 0.30f;
 static const float ATTACK_COOLDOWN = 0.40f;
+static const float PLAYER_MAX_HP = 100.0f;
+static const float PLAYER_RESPAWN_TIME = 5.0f;
 static const float DAY_DURATION = 5.0f;
 static const float NIGHT_DURATION = 180.0f;
 
@@ -18,7 +20,9 @@ static void ResetClient(ServerClient* c)
 #endif
     NetRecvBuffer_Init(&c->recv);
     NetSendBuffer_Init(&c->send);
-    c->hp = 75.0f;
+    c->hp = PLAYER_MAX_HP;
+    c->isDead = false;
+    c->respawnTimer = 0.0f;
     c->attackDirX = 1.0f;
     c->attackDirY = 0.0f;
     c->attackQueued = false;
@@ -67,6 +71,8 @@ static void SendSnapshot(ServerState* s, ServerClient* c)
         memcpy(buffer + offset, &p->x, sizeof(float)); offset += sizeof(float);
         memcpy(buffer + offset, &p->y, sizeof(float)); offset += sizeof(float);
         memcpy(buffer + offset, &p->hp, sizeof(float)); offset += sizeof(float);
+        buffer[offset++] = p->isDead ? 1 : 0;
+        memcpy(buffer + offset, &p->respawnTimer, sizeof(float)); offset += sizeof(float);
         buffer[offset++] = p->isAttacking ? 1 : 0;
         memcpy(buffer + offset, &p->attackProgress, sizeof(float)); offset += sizeof(float);
         memcpy(buffer + offset, &p->attackDirX, sizeof(float)); offset += sizeof(float);
@@ -186,6 +192,14 @@ static void HandleClientMessage(ServerState* s, ServerClient* c, uint8_t type, c
 static void UpdatePlayer(ServerState* s, ServerClient* p, float dt)
 {
     if (!p) return;
+    if (p->isDead)
+    {
+        p->isAttacking = false;
+        p->attackBuffered = false;
+        p->attackQueued = false;
+        p->attackProgress = 0.0f;
+        return;
+    }
 
     float mx = p->input.moveX;
     float my = p->input.moveY;
@@ -332,9 +346,41 @@ void Server_Update(ServerState* s, float dt)
 
     for (int i = 0; i < NET_MAX_PLAYERS; ++i)
     {
-        if (!s->clients[i].connected)
+        ServerClient* c = &s->clients[i];
+        if (!c->connected)
             continue;
-        UpdatePlayer(s, &s->clients[i], dt);
+        if (!c->isDead && c->hp <= 0.0f)
+        {
+            c->hp = 0.0f;
+            c->isDead = true;
+            c->respawnTimer = PLAYER_RESPAWN_TIME;
+            c->isAttacking = false;
+            c->attackBuffered = false;
+            c->attackQueued = false;
+            c->attackProgress = 0.0f;
+            c->attackCooldownTimer = 0.0f;
+        }
+
+        if (c->isDead)
+        {
+            c->respawnTimer -= dt;
+            if (c->respawnTimer <= 0.0f)
+            {
+                c->isDead = false;
+                c->respawnTimer = 0.0f;
+                c->hp = PLAYER_MAX_HP;
+                c->x = 0.0f;
+                c->y = 0.0f;
+                c->isAttacking = false;
+                c->attackBuffered = false;
+                c->attackQueued = false;
+                c->attackProgress = 0.0f;
+                c->attackCooldownTimer = 0.0f;
+            }
+            continue;
+        }
+
+        UpdatePlayer(s, c, dt);
     }
 
     s->snapshotTimer += dt;
@@ -372,6 +418,8 @@ int Server_GetSnapshot(ServerState* s, NetPlayerState* outPlayers, int maxPlayer
         out->x = p->x;
         out->y = p->y;
         out->hp = p->hp;
+        out->isDead = p->isDead ? 1 : 0;
+        out->respawnTimer = p->respawnTimer;
         out->isAttacking = p->isAttacking ? 1 : 0;
         out->attackProgress = p->attackProgress;
         out->attackDirX = p->attackDirX;
