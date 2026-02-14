@@ -9,8 +9,7 @@
 #include "net/protocol.h"
 
 void HandleBlockPlacement(const Player& player, const Camera2D& camera, 
-                         const Renderer* renderer, World* world, 
-                         Inventory& inventory, bool uiBlockInput);
+                         World* world, Inventory& inventory, bool uiBlockInput);
 
 void HandlePlayerAttack(Player& player, const Camera2D& camera, 
                        World* world, Texture2D* weaponSprite, bool uiBlockInput);

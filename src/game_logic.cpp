@@ -6,33 +6,34 @@
 void UpdateSingleplayerGame(Player& player, World* world, const Camera2D& camera,
                            Inventory& inventory, Texture2D* weaponSprite, bool uiBlockInput, float dt)
 {
+    (void)camera;
+    (void)inventory;
     NetInputState netInput = GetNetInput();
-    player.Update(dt, netInput.moveX, netInput.moveY, world->GetRaw(), world->GetTileSize());
-    HandleBlockPlacement(player, camera, nullptr, world, inventory, uiBlockInput);
+    player.Update(dt, Vec2{ netInput.moveX, netInput.moveY }, world->GetRaw(), world->GetTileSize());
     HandlePlayerAttack(player, camera, world, weaponSprite, uiBlockInput);
 }
 
 void UpdateCaveState(Player& player, World* world, bool& inCave,
-                    float& caveEntranceX, float& caveEntranceY, bool multiplayerActive)
+                    Vec2& caveEntrance, bool multiplayerActive)
 {
     const float caveDetectRadius = player.GetSize() * 1.5f;
     const float tileSize = world->GetTileSize();
-    const auto carveSafeArea = [&](float cx, float cy, int radiusTiles)
+    const auto carveSafeArea = [&](Vec2 center, int radiusTiles)
     {
-        int tx = (int)std::floor(cx / tileSize);
-        int ty = (int)std::floor(cy / tileSize);
+        int tx = (int)std::floor(center.x / tileSize);
+        int ty = (int)std::floor(center.y / tileSize);
         for (int dy = -radiusTiles; dy <= radiusTiles; ++dy)
         {
             for (int dx = -radiusTiles; dx <= radiusTiles; ++dx)
                 World_SetTile(world->GetRaw(), tx + dx, ty + dy, TILE_DIRT);
         }
     };
-    const auto carveCorridor = [&](float fromX, float fromY, float toX, float toY, int halfWidthTiles)
+    const auto carveCorridor = [&](Vec2 from, Vec2 to, int halfWidthTiles)
     {
-        int x0 = (int)std::floor(fromX / tileSize);
-        int y0 = (int)std::floor(fromY / tileSize);
-        int x1 = (int)std::floor(toX / tileSize);
-        int y1 = (int)std::floor(toY / tileSize);
+        int x0 = (int)std::floor(from.x / tileSize);
+        int y0 = (int)std::floor(from.y / tileSize);
+        int x1 = (int)std::floor(to.x / tileSize);
+        int y1 = (int)std::floor(to.y / tileSize);
 
         int x = x0;
         int y = y0;
@@ -56,39 +57,38 @@ void UpdateCaveState(Player& player, World* world, bool& inCave,
     {
         float entranceX = 0.0f;
         float entranceY = 0.0f;
-        if (World_FindNearestCaveEntrance(world->GetRaw(), player.GetX(), player.GetY(), caveDetectRadius, &entranceX, &entranceY))
+        Vec2 playerPos = player.GetPosition();
+        if (World_FindNearestCaveEntrance(world->GetRaw(), playerPos.x, playerPos.y, caveDetectRadius, &entranceX, &entranceY))
         {
             inCave = true;
-            caveEntranceX = entranceX;
-            caveEntranceY = entranceY;
-            World_SaveCaveEntrance(world->GetRaw(), caveEntranceX, caveEntranceY);
+            caveEntrance = { entranceX, entranceY };
+            World_SaveCaveEntrance(world->GetRaw(), caveEntrance.x, caveEntrance.y);
             World_SetCaveMode(world->GetRaw(), 1);
 
-            float caveSpawnX = caveEntranceX;
-            float caveSpawnY = caveEntranceY + tileSize * 4.0f;
-            carveSafeArea(caveSpawnX, caveSpawnY, 2);
-            carveSafeArea(caveEntranceX, caveEntranceY, 2);
-            carveCorridor(caveSpawnX, caveSpawnY, caveEntranceX, caveEntranceY, 1);
-            World_SetTile(world->GetRaw(), (int)std::floor(caveEntranceX / tileSize), (int)std::floor(caveEntranceY / tileSize), TILE_CAVE_ENTRANCE);
+            Vec2 caveSpawn = { caveEntrance.x, caveEntrance.y + tileSize * 4.0f };
+            carveSafeArea(caveSpawn, 2);
+            carveSafeArea(caveEntrance, 2);
+            carveCorridor(caveSpawn, caveEntrance, 1);
+            World_SetTile(world->GetRaw(), (int)std::floor(caveEntrance.x / tileSize), (int)std::floor(caveEntrance.y / tileSize), TILE_CAVE_ENTRANCE);
 
-            player.SetPosition(caveSpawnX, caveSpawnY);
+            player.SetPosition(caveSpawn);
         }
     }
     else if (inCave && !multiplayerActive)
     {
-        if (World_CheckCaveEntrance(world->GetRaw(), player.GetX(), player.GetY(), caveDetectRadius))
+        Vec2 playerPos = player.GetPosition();
+        if (World_CheckCaveEntrance(world->GetRaw(), playerPos.x, playerPos.y, caveDetectRadius))
         {
             inCave = false;
             World_SetCaveMode(world->GetRaw(), 0);
 
-            float exitX = caveEntranceX;
-            float exitY = caveEntranceY - tileSize * 3.0f;
-            carveSafeArea(caveEntranceX, caveEntranceY, 2);
-            carveSafeArea(exitX, exitY, 2);
-            carveCorridor(exitX, exitY, caveEntranceX, caveEntranceY, 1);
-            World_SetTile(world->GetRaw(), (int)std::floor(caveEntranceX / tileSize), (int)std::floor(caveEntranceY / tileSize), TILE_CAVE_ENTRANCE);
+            Vec2 exitPos = { caveEntrance.x, caveEntrance.y - tileSize * 3.0f };
+            carveSafeArea(caveEntrance, 2);
+            carveSafeArea(exitPos, 2);
+            carveCorridor(exitPos, caveEntrance, 1);
+            World_SetTile(world->GetRaw(), (int)std::floor(caveEntrance.x / tileSize), (int)std::floor(caveEntrance.y / tileSize), TILE_CAVE_ENTRANCE);
 
-            player.SetPosition(exitX, exitY);
+            player.SetPosition(exitPos);
         }
     }
 }

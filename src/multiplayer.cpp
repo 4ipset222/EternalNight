@@ -32,26 +32,24 @@ RemotePlayer* FindRemote(std::vector<RemotePlayer>& list, uint8_t id)
 
 void UpdateMultiplayerInput(Player& player, World* world, NetInputState& netInput,
                            Texture2D* weaponSprite, bool uiBlockInput,
-                           float& attackBufferTimer, float& lastAttackDirX, float& lastAttackDirY,
+                           float& attackBufferTimer, Vec2& lastAttackDir,
                            const Camera2D& camera, float dt)
 {
+    (void)world;
     if (attackBufferTimer > 0.0f)
         attackBufferTimer -= dt;
     if (weaponSprite && !uiBlockInput && Input_IsMousePressed(MOUSE_LEFT))
     {
-        float mx = (float)Input_GetMouseX();
-        float my = (float)Input_GetMouseY();
-        float worldMx = camera.x + mx / camera.zoom;
-        float worldMy = camera.y + my / camera.zoom;
-        lastAttackDirX = worldMx - player.GetX();
-        lastAttackDirY = worldMy - player.GetY();
+        Vec2 mouse = { (float)Input_GetMouseX(), (float)Input_GetMouseY() };
+        Vec2 worldMouse = { camera.x + mouse.x / camera.zoom, camera.y + mouse.y / camera.zoom };
+        lastAttackDir = vec2_sub(worldMouse, player.GetPosition());
         attackBufferTimer = 0.20f;
     }
     if (attackBufferTimer > 0.0f)
     {
         netInput.attack = 1;
-        netInput.attackDirX = lastAttackDirX;
-        netInput.attackDirY = lastAttackDirY;
+        netInput.attackDirX = lastAttackDir.x;
+        netInput.attackDirY = lastAttackDir.y;
     }
 }
 
@@ -67,17 +65,16 @@ void UpdateClientMovement(Player& player, World* world, NetInputState& netInput,
         mx *= inv;
         my *= inv;
     }
-    float px = player.GetX();
-    float py = player.GetY();
+    Vec2 playerPos = player.GetPosition();
     float radius = player.GetSize() * 0.45f;
     const float NET_PLAYER_SPEED = 200.0f;
-    World_MoveWithCollision(world->GetRaw(), world->GetTileSize(), radius, &px, &py, 
+    World_MoveWithCollision(world->GetRaw(), world->GetTileSize(), radius, &playerPos.x, &playerPos.y,
                            mx * NET_PLAYER_SPEED * dt, my * NET_PLAYER_SPEED * dt);
-    player.SetPosition(px, py);
+    player.SetPosition(playerPos);
 
     inputSeq++;
     netInput.seq = inputSeq;
-    pendingInputs.push_back({ inputSeq, dt, mx, my });
+    pendingInputs.push_back({ inputSeq, dt, Vec2{ mx, my } });
 }
 
 void ProcessNetworkSnapshot(const NetPlayerState* snap, int snapCount, uint8_t localId,
@@ -111,12 +108,11 @@ void ProcessNetworkSnapshot(const NetPlayerState* snap, int snapCount, uint8_t l
                 }
                 for (const auto& inp : pendingInputs)
                 {
-                    float nx = player.GetX();
-                    float ny = player.GetY();
+                    Vec2 replayPos = player.GetPosition();
                     float radius = player.GetSize() * 0.45f;
-                    World_MoveWithCollision(world->GetRaw(), world->GetTileSize(), radius, &nx, &ny, 
-                                           inp.moveX * NET_PLAYER_SPEED * inp.dt, inp.moveY * NET_PLAYER_SPEED * inp.dt);
-                    player.SetPosition(nx, ny);
+                    World_MoveWithCollision(world->GetRaw(), world->GetTileSize(), radius, &replayPos.x, &replayPos.y,
+                                           inp.move.x * NET_PLAYER_SPEED * inp.dt, inp.move.y * NET_PLAYER_SPEED * inp.dt);
+                    player.SetPosition(replayPos);
                 }
             }
         }
@@ -132,9 +128,10 @@ void ProcessNetworkSnapshot(const NetPlayerState* snap, int snapCount, uint8_t l
             }
             if (mpMode == MpMode::Client)
             {
-                float rx = rp->player.GetX() + (ps.x - rp->player.GetX()) * smooth;
-                float ry = rp->player.GetY() + (ps.y - rp->player.GetY()) * smooth;
-                rp->player.SetPosition(rx, ry);
+                Vec2 rpPos = rp->player.GetPosition();
+                rpPos.x += (ps.x - rpPos.x) * smooth;
+                rpPos.y += (ps.y - rpPos.y) * smooth;
+                rp->player.SetPosition(rpPos);
             }
             else
             {

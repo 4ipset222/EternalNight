@@ -7,12 +7,11 @@ void DrawDebugInfo(const Player& player, World* world, const Renderer* renderer,
                   const Camera2D& camera, bool inCave, bool isNight, float cycleTimer,
                   float DAY_DURATION, float NIGHT_DURATION, float fogStrength)
 {
-    float px = player.GetX();
-    float py = player.GetY();
+    Vec2 playerPos = player.GetPosition();
     float tileSize = 16.0f;
 
-    int tileX = (int)floorf(px / tileSize);
-    int tileY = (int)floorf(py / tileSize);
+    int tileX = (int)floorf(playerPos.x / tileSize);
+    int tileY = (int)floorf(playerPos.y / tileSize);
 
     int chunkX = tileX >= 0
         ? tileX / CHUNK_SIZE
@@ -24,7 +23,7 @@ void DrawDebugInfo(const Player& player, World* world, const Renderer* renderer,
 
     int tileId = World_GetTile(world->GetRaw(), tileX, tileY);
     const char* biomeName = World_GetBiomeName(world->GetRaw(), tileX, tileY);
-    int caveNearby = World_CheckCaveEntrance(world->GetRaw(), px, py, 100.0f);
+    int caveNearby = World_CheckCaveEntrance(world->GetRaw(), playerPos.x, playerPos.y, 100.0f);
 
     char dbg[512];
     snprintf(dbg, sizeof(dbg),
@@ -40,7 +39,7 @@ void DrawDebugInfo(const Player& player, World* world, const Renderer* renderer,
         "Cycle: %.2f / %.2f\n"
         "Night Fog: %.2f",
         GetFPS(),
-        px, py,
+        playerPos.x, playerPos.y,
         tileX, tileY, tileId,
         chunkX, chunkY,
         biomeName,

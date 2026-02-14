@@ -4,19 +4,16 @@
 #include <cmath>
 
 void HandleBlockPlacement(const Player& player, const Camera2D& camera, 
-                         const Renderer* renderer, World* world, 
-                         Inventory& inventory, bool uiBlockInput)
+                         World* world, Inventory& inventory, bool uiBlockInput)
 {
     Item* selected = inventory.GetSelectedItem();
     if (selected && selected->type == ITEM_BLOCK && !uiBlockInput && Input_IsMousePressed(MOUSE_LEFT))
     {
-        float mx = (float)Input_GetMouseX();
-        float my = (float)Input_GetMouseY();
-        float worldMx = camera.x + mx / camera.zoom;
-        float worldMy = camera.y + my / camera.zoom;
+        Vec2 mouse = { (float)Input_GetMouseX(), (float)Input_GetMouseY() };
+        Vec2 worldMouse = { camera.x + mouse.x / camera.zoom, camera.y + mouse.y / camera.zoom };
         
-        int tileX = (int)floorf(worldMx / 16.0f);
-        int tileY = (int)floorf(worldMy / 16.0f);
+        int tileX = (int)floorf(worldMouse.x / 16.0f);
+        int tileY = (int)floorf(worldMouse.y / 16.0f);
         
         if (selected->tileType >= 0)
         {
@@ -31,19 +28,17 @@ void HandlePlayerAttack(Player& player, const Camera2D& camera,
 {
     if (weaponSprite && !uiBlockInput && Input_IsMousePressed(MOUSE_LEFT))
     {
-        float mx = (float)Input_GetMouseX();
-        float my = (float)Input_GetMouseY();
-        float worldMx = camera.x + mx / camera.zoom;
-        float worldMy = camera.y + my / camera.zoom;
-        float dirX = worldMx - player.GetX();
-        float dirY = worldMy - player.GetY();
+        Vec2 mouse = { (float)Input_GetMouseX(), (float)Input_GetMouseY() };
+        Vec2 worldMouse = { camera.x + mouse.x / camera.zoom, camera.y + mouse.y / camera.zoom };
+        Vec2 playerPos = player.GetPosition();
+        Vec2 dir = vec2_sub(worldMouse, playerPos);
 
-        if (player.Attack(dirX, dirY))
+        if (player.Attack(dir))
         {
             World_PlayerAttack(
                 world->GetRaw(),
-                player.GetX(), player.GetY(),
-                dirX, dirY,
+                playerPos.x, playerPos.y,
+                dir.x, dir.y,
                 player.GetAttackRange(),
                 player.GetAttackArcCos(),
                 player.GetAttackDamage()

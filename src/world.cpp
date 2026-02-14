@@ -6,6 +6,8 @@ World::World(int loadRadiusChunks, int seed)
 {
     forgeWorld = World_Create(loadRadiusChunks, seed);
     tileSize = 16.0f;
+    tileTriPos.reserve(8192);
+    tileTriCol.reserve(16384);
 }
 
 World::~World()
@@ -13,10 +15,10 @@ World::~World()
     World_Destroy(forgeWorld);
 }
 
-void World::Update(float dt, int isNight, float focusX, float focusY, float playerX, float playerY, float playerRadius, float* ioPlayerHP, bool updateMobs)
+void World::Update(float dt, int isNight, Vec2 focusPos, Vec2 playerPos, float playerRadius, float* ioPlayerHP, bool updateMobs)
 {
-    int camTileX = (int)floorf(focusX / tileSize);
-    int camTileY = (int)floorf(focusY / tileSize);
+    int camTileX = (int)floorf(focusPos.x / tileSize);
+    int camTileY = (int)floorf(focusPos.y / tileSize);
 
     int centerChunkX = camTileX >= 0
         ? camTileX / CHUNK_SIZE
@@ -28,7 +30,7 @@ void World::Update(float dt, int isNight, float focusX, float focusY, float play
 
     World_UpdateChunks(forgeWorld, centerChunkX, centerChunkY);
     if (updateMobs)
-        World_UpdateMobs(forgeWorld, dt, isNight, playerX, playerY, playerRadius, ioPlayerHP);
+        World_UpdateMobs(forgeWorld, dt, isNight, playerPos.x, playerPos.y, playerRadius, ioPlayerHP);
 }
 
 void World::Draw(const Camera2D& camera, int screenW, int screenH, bool drawMobs) const
@@ -48,10 +50,10 @@ void World::Draw(const Camera2D& camera, int screenW, int screenH, bool drawMobs
         ? tilesW * tilesH
         : 0;
 
-    std::vector<float> triPos;
-    std::vector<float> triCol;
-    triPos.reserve((size_t)maxTiles * 6 * 2);
-    triCol.reserve((size_t)maxTiles * 6 * 4);
+    tileTriPos.clear();
+    tileTriCol.clear();
+    tileTriPos.reserve((size_t)maxTiles * 6 * 2);
+    tileTriCol.reserve((size_t)maxTiles * 6 * 4);
 
     for (int y = tilesYStart; y < tilesYEnd; y++)
     {
@@ -79,22 +81,22 @@ void World::Draw(const Camera2D& camera, int screenW, int screenH, bool drawMobs
             };
 
             for (int i = 0; i < 12; i++)
-                triPos.push_back(pos[i]);
+                tileTriPos.push_back(pos[i]);
 
             for (int v = 0; v < 6; v++)
             {
-                triCol.push_back(col.x);
-                triCol.push_back(col.y);
-                triCol.push_back(col.z);
-                triCol.push_back(col.w);
+                tileTriCol.push_back(col.x);
+                tileTriCol.push_back(col.y);
+                tileTriCol.push_back(col.z);
+                tileTriCol.push_back(col.w);
             }
         }
     }
 
     Renderer_DrawTrianglesColored(
-        triPos.data(),
-        triCol.data(),
-        (int)(triPos.size() / 2)
+        tileTriPos.data(),
+        tileTriCol.data(),
+        (int)(tileTriPos.size() / 2)
     );
 
     if (drawMobs)

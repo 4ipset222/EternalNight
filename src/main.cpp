@@ -94,8 +94,7 @@ int main(int argc, char** argv)
     std::vector<PendingInput> pendingInputs;
     uint16_t inputSeq = 0;
     float attackBufferTimer = 0.0f;
-    float lastAttackDirX = 1.0f;
-    float lastAttackDirY = 0.0f;
+    Vec2 lastAttackDir = { 1.0f, 0.0f };
     const float RESPAWN_TIME_SECONDS = 5.0f;
     bool singleplayerDead = false;
     float singleplayerRespawnTimer = 0.0f;
@@ -106,8 +105,7 @@ int main(int argc, char** argv)
     bool prevF3 = false;
 
     bool inCave = false;
-    float caveEntranceX = 0.0f;
-    float caveEntranceY = 0.0f;
+    Vec2 caveEntrance = { 0.0f, 0.0f };
 
     float fogStrength = 0.0f;
     const float DAY_DURATION = 300.0f;
@@ -147,16 +145,14 @@ int main(int argc, char** argv)
                 raw->caveAmount = cfg.caveAmount;
                 World_ReloadChunks(raw);
                 currentGameState = STATE_PLAYING;
-                player.SetX(0.0f);
-                player.SetY(0.0f);
+                player.SetPosition(Vec2{ 0.0f, 0.0f });
                 player.SetHP(100.0f);
                 singleplayerDead = false;
                 singleplayerRespawnTimer = 0.0f;
                 localDead = false;
                 localRespawnTimer = 0.0f;
                 inCave = false;
-                caveEntranceX = raw->caveEntranceX;
-                caveEntranceY = raw->caveEntranceY;
+                caveEntrance = { raw->caveEntranceX, raw->caveEntranceY };
                 isNight = false;
                 cycleTimer = 0.0f;
                 fogStrength = 0.0f;
@@ -171,14 +167,13 @@ int main(int argc, char** argv)
                 GameSaveState loaded = {};
                 if (Storage_LoadGame(world->GetRaw(), &loaded))
                 {
-                    player.SetPosition(loaded.playerX, loaded.playerY);
+                    player.SetPosition(Vec2{ loaded.playerX, loaded.playerY });
                     player.SetHP(loaded.playerHP);
                     inCave = loaded.inCave != 0;
                     isNight = loaded.isNight != 0;
                     cycleTimer = loaded.cycleTimer;
                     fogStrength = loaded.fogStrength;
-                    caveEntranceX = loaded.caveEntranceX;
-                    caveEntranceY = loaded.caveEntranceY;
+                    caveEntrance = { loaded.caveEntranceX, loaded.caveEntranceY };
                     singleplayerDead = false;
                     singleplayerRespawnTimer = 0.0f;
                     localDead = false;
@@ -216,15 +211,16 @@ int main(int argc, char** argv)
             if (autoSaveTimer >= 8.0f)
             {
                 GameSaveState state = {};
-                state.playerX = player.GetX();
-                state.playerY = player.GetY();
+                Vec2 playerPos = player.GetPosition();
+                state.playerX = playerPos.x;
+                state.playerY = playerPos.y;
                 state.playerHP = player.GetHP();
                 state.inCave = inCave ? 1 : 0;
                 state.isNight = isNight ? 1 : 0;
                 state.cycleTimer = cycleTimer;
                 state.fogStrength = fogStrength;
-                state.caveEntranceX = caveEntranceX;
-                state.caveEntranceY = caveEntranceY;
+                state.caveEntranceX = caveEntrance.x;
+                state.caveEntranceY = caveEntrance.y;
                 Storage_SaveGame(world->GetRaw(), &state);
                 autoSaveTimer = 0.0f;
             }
@@ -245,14 +241,15 @@ int main(int argc, char** argv)
 
         bool blockGameplayInput = localDead || pauseMenuOpen;
         if (!blockGameplayInput)
-            HandleBlockPlacement(player, camera, renderer, world, inventory, uiBlockInput);
+            HandleBlockPlacement(player, camera, world, inventory, uiBlockInput);
 
         NetInputState netInput = blockGameplayInput ? NetInputState{} : GetNetInput();
 
         float halfW = (float)renderer->width * 0.5f;
         float halfH = (float)renderer->height * 0.5f;
-        camera.x = player.GetX() - halfW / camera.zoom;
-        camera.y = player.GetY() - halfH / camera.zoom;
+        Vec2 playerPos = player.GetPosition();
+        camera.x = playerPos.x - halfW / camera.zoom;
+        camera.y = playerPos.y - halfH / camera.zoom;
 
         UpdateCameraZoom(camera, dt);
 
@@ -268,7 +265,7 @@ int main(int argc, char** argv)
                 if (!localDead)
                 {
                     UpdateMultiplayerInput(player, world, netInput, weaponSprite, uiBlockInput,
-                                          attackBufferTimer, lastAttackDirX, lastAttackDirY, camera, dt);
+                                          attackBufferTimer, lastAttackDir, camera, dt);
                 }
 
                 if (mpMode == MpMode::Client && clientReady && !localDead)
@@ -317,15 +314,15 @@ int main(int argc, char** argv)
                 cycleTimer = snapCycle;
             }
 
-            camera.x = player.GetX() - halfW / camera.zoom;
-            camera.y = player.GetY() - halfH / camera.zoom;
+            playerPos = player.GetPosition();
+            camera.x = playerPos.x - halfW / camera.zoom;
+            camera.y = playerPos.y - halfH / camera.zoom;
 
             float playerHP = player.GetHP();
             if (multiplayerActive)
             {
                 float dummyHP = playerHP;
-                world->Update(dt, isNight ? 1 : 0, player.GetX(), player.GetY(),
-                             player.GetX(), player.GetY(), player.GetSize(), &dummyHP, false);
+                world->Update(dt, isNight ? 1 : 0, playerPos, playerPos, player.GetSize(), &dummyHP, false);
             }
             else
             {
@@ -348,14 +345,14 @@ int main(int argc, char** argv)
                     }
                 }
 
-                world->Update(dt, isNight ? 1 : 0, player.GetX(), player.GetY(),
-                             player.GetX(), player.GetY(), player.GetSize(), &playerHP, !singleplayerDead);
+                playerPos = player.GetPosition();
+                world->Update(dt, isNight ? 1 : 0, playerPos, playerPos, player.GetSize(), &playerHP, !singleplayerDead);
                 player.SetHP(playerHP);
                 localDead = singleplayerDead;
                 localRespawnTimer = singleplayerRespawnTimer;
             }
 
-            UpdateCaveState(player, world, inCave, caveEntranceX, caveEntranceY, multiplayerActive);
+            UpdateCaveState(player, world, inCave, caveEntrance, multiplayerActive);
 
             if (mpMode == MpMode::Host && serverReady)
                 UpdateHostMobs(player, world, server, mobSyncTimer, isNight, dt);
@@ -372,15 +369,16 @@ int main(int argc, char** argv)
         if (mpMode == MpMode::None && Input_IsKeyPressed(KEY_F5))
         {
             GameSaveState state = {};
-            state.playerX = player.GetX();
-            state.playerY = player.GetY();
+            Vec2 playerPos = player.GetPosition();
+            state.playerX = playerPos.x;
+            state.playerY = playerPos.y;
             state.playerHP = player.GetHP();
             state.inCave = inCave ? 1 : 0;
             state.isNight = isNight ? 1 : 0;
             state.cycleTimer = cycleTimer;
             state.fogStrength = fogStrength;
-            state.caveEntranceX = caveEntranceX;
-            state.caveEntranceY = caveEntranceY;
+            state.caveEntranceX = caveEntrance.x;
+            state.caveEntranceY = caveEntrance.y;
             Storage_SaveGame(world->GetRaw(), &state);
             autoSaveTimer = 0.0f;
         }
@@ -566,15 +564,16 @@ int main(int argc, char** argv)
             if (DrawPauseButton(panelX + 40.0f, panelY + 138.0f, 240.0f, 44.0f, "Save World", canSave))
             {
                 GameSaveState state = {};
-                state.playerX = player.GetX();
-                state.playerY = player.GetY();
+                Vec2 playerPos = player.GetPosition();
+                state.playerX = playerPos.x;
+                state.playerY = playerPos.y;
                 state.playerHP = player.GetHP();
                 state.inCave = inCave ? 1 : 0;
                 state.isNight = isNight ? 1 : 0;
                 state.cycleTimer = cycleTimer;
                 state.fogStrength = fogStrength;
-                state.caveEntranceX = caveEntranceX;
-                state.caveEntranceY = caveEntranceY;
+                state.caveEntranceX = caveEntrance.x;
+                state.caveEntranceY = caveEntrance.y;
                 Storage_SaveGame(world->GetRaw(), &state);
                 autoSaveTimer = 0.0f;
             }
@@ -596,15 +595,16 @@ int main(int argc, char** argv)
             if (mpMode == MpMode::None && world)
             {
                 GameSaveState state = {};
-                state.playerX = player.GetX();
-                state.playerY = player.GetY();
+                Vec2 playerPos = player.GetPosition();
+                state.playerX = playerPos.x;
+                state.playerY = playerPos.y;
                 state.playerHP = player.GetHP();
                 state.inCave = inCave ? 1 : 0;
                 state.isNight = isNight ? 1 : 0;
                 state.cycleTimer = cycleTimer;
                 state.fogStrength = fogStrength;
-                state.caveEntranceX = caveEntranceX;
-                state.caveEntranceY = caveEntranceY;
+                state.caveEntranceX = caveEntrance.x;
+                state.caveEntranceY = caveEntrance.y;
                 Storage_SaveGame(world->GetRaw(), &state);
             }
             if (mpMode == MpMode::Host && serverReady)
@@ -638,15 +638,16 @@ int main(int argc, char** argv)
     if (world && mpMode == MpMode::None)
     {
         GameSaveState state = {};
-        state.playerX = player.GetX();
-        state.playerY = player.GetY();
+        Vec2 playerPos = player.GetPosition();
+        state.playerX = playerPos.x;
+        state.playerY = playerPos.y;
         state.playerHP = player.GetHP();
         state.inCave = inCave ? 1 : 0;
         state.isNight = isNight ? 1 : 0;
         state.cycleTimer = cycleTimer;
         state.fogStrength = fogStrength;
-        state.caveEntranceX = caveEntranceX;
-        state.caveEntranceY = caveEntranceY;
+        state.caveEntranceX = caveEntrance.x;
+        state.caveEntranceY = caveEntrance.y;
         Storage_SaveGame(world->GetRaw(), &state);
     }
 

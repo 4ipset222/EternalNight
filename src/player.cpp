@@ -1,15 +1,15 @@
 #include "player.h"
 #include <math.h>
 
-Player::Player(float x, float y)
-    : x(x), y(y), speed(200.0f), size(16.0f)
+Player::Player(Vec2 position)
+    : position(position), speed(200.0f), size(16.0f)
 {
 }
 
-void Player::Update(float dt, float moveX, float moveY, ForgeWorld* world, float tileSize)
+void Player::Update(float dt, Vec2 move, ForgeWorld* world, float tileSize)
 {
-    float mx = moveX;
-    float my = moveY;
+    float mx = move.x;
+    float my = move.y;
     float lenSq = mx * mx + my * my;
     if (lenSq > 1.0f)
     {
@@ -21,7 +21,7 @@ void Player::Update(float dt, float moveX, float moveY, ForgeWorld* world, float
     float dx = mx * speed * dt;
     float dy = my * speed * dt;
     float radius = size * 0.45f;
-    World_MoveWithCollision(world, tileSize, radius, &x, &y, dx, dy);
+    World_MoveWithCollision(world, tileSize, radius, &position.x, &position.y, dx, dy);
 
     if (stamina < maxStamina)
     {
@@ -48,7 +48,7 @@ void Player::Update(float dt, float moveX, float moveY, ForgeWorld* world, float
 void Player::Draw() const
 {
     Renderer_DrawRectangle(
-        Rect{ x - size / 2.0f, y - size / 2.0f, size, size },
+        Rect{ position.x - size / 2.0f, position.y - size / 2.0f, size, size },
         color
     );
 
@@ -66,8 +66,8 @@ void Player::Draw() const
         float scale = targetLength / maxDim;
         Rect src = { 0, 0, drawW, drawH };
         float reach = size * 0.55f;
-        float sx = x + attackDirX * reach;
-        float sy = y + attackDirY * reach;
+        float sx = position.x + attackDir.x * reach;
+        float sy = position.y + attackDir.y * reach;
         Rect dst = { sx, sy, drawW * scale, drawH * scale };
         Vec2 origin = { (drawW * scale) * 0.15f, (drawH * scale) * 0.5f };
 
@@ -118,21 +118,21 @@ void Player::DrawStamina() const
     Renderer_DrawRectangleLines(Rect{xPos, yPos, barWidth, barHeight}, 2.0f, Color{1.0f, 1.0f, 1.0f, 1.0f});
 }
 
-bool Player::Attack(float dirX, float dirY)
+bool Player::Attack(Vec2 dir)
 {
     if (attackCooldownTimer > 0.0f)
         return false;
     if (stamina < staminaAttackCost)
         return false;
 
-    float lenSq = dirX * dirX + dirY * dirY;
+    float lenSq = dir.x * dir.x + dir.y * dir.y;
     if (lenSq < 0.0001f)
         return false;
 
     float invLen = 1.0f / sqrtf(lenSq);
-    attackDirX = dirX * invLen;
-    attackDirY = dirY * invLen;
-    attackBaseAngle = atan2f(attackDirY, attackDirX);
+    attackDir.x = dir.x * invLen;
+    attackDir.y = dir.y * invLen;
+    attackBaseAngle = atan2f(attackDir.y, attackDir.x);
     attackTimer = attackDuration;
     attackCooldownTimer = attackCooldown;
     attackProgress = 0.0f;
@@ -142,11 +142,10 @@ bool Player::Attack(float dirX, float dirY)
     return true;
 }
 
-void Player::SetAttackState(bool attacking, float progress, float dirX, float dirY, float baseAngle)
+void Player::SetAttackState(bool attacking, float progress, Vec2 dir, float baseAngle)
 {
     isAttacking = attacking;
     attackProgress = progress;
-    attackDirX = dirX;
-    attackDirY = dirY;
+    attackDir = dir;
     attackBaseAngle = baseAngle;
 }

@@ -20,8 +20,7 @@ struct PendingInput
 {
     uint16_t seq;
     float dt;
-    float moveX;
-    float moveY;
+    Vec2 move;
 };
 
 Color ColorForId(uint8_t id);
@@ -30,7 +29,7 @@ RemotePlayer* FindRemote(std::vector<RemotePlayer>& list, uint8_t id);
 
 void UpdateMultiplayerInput(Player& player, World* world, NetInputState& netInput,
                            Texture2D* weaponSprite, bool uiBlockInput,
-                           float& attackBufferTimer, float& lastAttackDirX, float& lastAttackDirY,
+                           float& attackBufferTimer, Vec2& lastAttackDir,
                            const Camera2D& camera, float dt);
 
 void UpdateClientMovement(Player& player, World* world, NetInputState& netInput,
