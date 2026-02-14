@@ -115,6 +115,8 @@ int main(int argc, char** argv)
     const float NIGHT_FADE = 10.0f;
     bool isNight = false;
     float cycleTimer = 0.0f;
+    float autoSaveTimer = 0.0f;
+    bool pauseMenuOpen = false;
 
     static float uiX = 10.0f;
     static float uiY = 10.0f;
@@ -128,7 +130,7 @@ int main(int argc, char** argv)
 
         ImGuiLite_BeginFrame(&ui);
 
-        if (currentGameState == STATE_MENU || currentGameState == STATE_NEW_GAME)
+        if (currentGameState == STATE_MENU || currentGameState == STATE_NEW_GAME || currentGameState == STATE_LOAD_GAME)
         {
             mainMenu.Update();
             GameState newState = mainMenu.GetGameState();
@@ -152,6 +154,43 @@ int main(int argc, char** argv)
                 singleplayerRespawnTimer = 0.0f;
                 localDead = false;
                 localRespawnTimer = 0.0f;
+                inCave = false;
+                caveEntranceX = raw->caveEntranceX;
+                caveEntranceY = raw->caveEntranceY;
+                isNight = false;
+                cycleTimer = 0.0f;
+                fogStrength = 0.0f;
+                autoSaveTimer = 0.0f;
+            }
+            else if (newState == STATE_LOAD_GAME)
+            {
+                if (world)
+                    delete world;
+                world = new World(WORLD_LOAD_RADIUS_CHUNKS, 0);
+
+                GameSaveState loaded = {};
+                if (Storage_LoadGame(world->GetRaw(), &loaded))
+                {
+                    player.SetPosition(loaded.playerX, loaded.playerY);
+                    player.SetHP(loaded.playerHP);
+                    inCave = loaded.inCave != 0;
+                    isNight = loaded.isNight != 0;
+                    cycleTimer = loaded.cycleTimer;
+                    fogStrength = loaded.fogStrength;
+                    caveEntranceX = loaded.caveEntranceX;
+                    caveEntranceY = loaded.caveEntranceY;
+                    singleplayerDead = false;
+                    singleplayerRespawnTimer = 0.0f;
+                    localDead = false;
+                    localRespawnTimer = 0.0f;
+                    currentGameState = STATE_PLAYING;
+                    autoSaveTimer = 0.0f;
+                }
+                else
+                {
+                    currentGameState = STATE_MENU;
+                    mainMenu.SetGameState(STATE_MENU);
+                }
             }
             else if (newState == STATE_EXITING)
                 break;
@@ -166,8 +205,33 @@ int main(int argc, char** argv)
         
         if (!world) continue;
 
-        inventory.Update();
         bool multiplayerActive = (mpMode != MpMode::None);
+        if (Input_IsKeyPressed(KEY_ESCAPE))
+            pauseMenuOpen = !pauseMenuOpen;
+        bool singleplayerPaused = pauseMenuOpen && !multiplayerActive;
+
+        if (currentGameState == STATE_PLAYING && mpMode == MpMode::None)
+        {
+            autoSaveTimer += dt;
+            if (autoSaveTimer >= 8.0f)
+            {
+                GameSaveState state = {};
+                state.playerX = player.GetX();
+                state.playerY = player.GetY();
+                state.playerHP = player.GetHP();
+                state.inCave = inCave ? 1 : 0;
+                state.isNight = isNight ? 1 : 0;
+                state.cycleTimer = cycleTimer;
+                state.fogStrength = fogStrength;
+                state.caveEntranceX = caveEntranceX;
+                state.caveEntranceY = caveEntranceY;
+                Storage_SaveGame(world->GetRaw(), &state);
+                autoSaveTimer = 0.0f;
+            }
+        }
+
+        if (!pauseMenuOpen)
+            inventory.Update();
 
         Item* selected = inventory.GetSelectedItem();
         Texture2D* weaponSprite = (selected && selected->type == ITEM_WEAPON) ? selected->sprite : nullptr;
@@ -177,9 +241,9 @@ int main(int argc, char** argv)
         float uiMouseY = (float)Input_GetMouseY();
         bool mouseInUi = uiMouseX >= uiX && uiMouseX <= uiX + uiW &&
                          uiMouseY >= uiY && uiMouseY <= uiY + uiH;
-        bool uiBlockInput = mouseInUi || ui.kbdId != 0 || ui.activeId != 0;
+        bool uiBlockInput = mouseInUi || ui.kbdId != 0 || ui.activeId != 0 || pauseMenuOpen;
 
-        bool blockGameplayInput = localDead;
+        bool blockGameplayInput = localDead || pauseMenuOpen;
         if (!blockGameplayInput)
             HandleBlockPlacement(player, camera, renderer, world, inventory, uiBlockInput);
 
@@ -192,118 +256,161 @@ int main(int argc, char** argv)
 
         UpdateCameraZoom(camera, dt);
 
-        if (!multiplayerActive)
+        if (!singleplayerPaused)
         {
-            if (!singleplayerDead)
-                UpdateSingleplayerGame(player, world, camera, inventory, weaponSprite, uiBlockInput, dt);
-        }
-        else
-        {
-            if (!localDead)
+            if (!multiplayerActive)
             {
-                UpdateMultiplayerInput(player, world, netInput, weaponSprite, uiBlockInput,
-                                      attackBufferTimer, lastAttackDirX, lastAttackDirY, camera, dt);
+                if (!singleplayerDead)
+                    UpdateSingleplayerGame(player, world, camera, inventory, weaponSprite, uiBlockInput, dt);
+            }
+            else
+            {
+                if (!localDead)
+                {
+                    UpdateMultiplayerInput(player, world, netInput, weaponSprite, uiBlockInput,
+                                          attackBufferTimer, lastAttackDirX, lastAttackDirY, camera, dt);
+                }
+
+                if (mpMode == MpMode::Client && clientReady && !localDead)
+                    UpdateClientMovement(player, world, netInput, inputSeq, pendingInputs, dt);
+
+                if (mpMode == MpMode::Host && serverReady)
+                {
+                    Server_Update(&server, dt);
+                }
+                else if (mpMode == MpMode::Client && clientReady)
+                {
+                    Client_SendInput(&client, &netInput);
+                    Client_Update(&client, dt);
+                    if (!Client_IsConnected(&client))
+                    {
+                        mpMode = MpMode::None;
+                        remotePlayers.clear();
+                        clientReady = false;
+                        pendingInputs.clear();
+                        inputSeq = 0;
+                    }
+                }
+
+                NetPlayerState snap[NET_MAX_PLAYERS];
+                int snapCount = 0;
+                uint8_t localId = 0;
+                bool snapNight = isNight;
+                float snapCycle = cycleTimer;
+
+                if (mpMode == MpMode::Host && serverReady)
+                {
+                    localId = 0;
+                    snapCount = Server_GetSnapshot(&server, snap, NET_MAX_PLAYERS, &snapNight, &snapCycle);
+                }
+                else if (mpMode == MpMode::Client && clientReady)
+                {
+                    localId = client.playerId;
+                    snapCount = Client_GetSnapshot(&client, snap, NET_MAX_PLAYERS, &snapNight, &snapCycle);
+                }
+
+                ProcessNetworkSnapshot(snap, snapCount, localId, player, remotePlayers,
+                                      pendingInputs, world, swordSprite, mpMode, dt,
+                                      localDead, localRespawnTimer);
+
+                isNight = snapNight;
+                cycleTimer = snapCycle;
             }
 
-            if (mpMode == MpMode::Client && clientReady && !localDead)
-                UpdateClientMovement(player, world, netInput, inputSeq, pendingInputs, dt);
+            camera.x = player.GetX() - halfW / camera.zoom;
+            camera.y = player.GetY() - halfH / camera.zoom;
+
+            float playerHP = player.GetHP();
+            if (multiplayerActive)
+            {
+                float dummyHP = playerHP;
+                world->Update(dt, isNight ? 1 : 0, player.GetX(), player.GetY(),
+                             player.GetX(), player.GetY(), player.GetSize(), &dummyHP, false);
+            }
+            else
+            {
+                if (!singleplayerDead && playerHP <= 0.0f)
+                {
+                    singleplayerDead = true;
+                    singleplayerRespawnTimer = RESPAWN_TIME_SECONDS;
+                    playerHP = 0.0f;
+                    player.SetHP(0.0f);
+                }
+                if (singleplayerDead)
+                {
+                    singleplayerRespawnTimer -= dt;
+                    if (singleplayerRespawnTimer <= 0.0f)
+                    {
+                        singleplayerRespawnTimer = 0.0f;
+                        singleplayerDead = false;
+                        player.SetPosition(0.0f, 0.0f);
+                        playerHP = 100.0f;
+                    }
+                }
+
+                world->Update(dt, isNight ? 1 : 0, player.GetX(), player.GetY(),
+                             player.GetX(), player.GetY(), player.GetSize(), &playerHP, !singleplayerDead);
+                player.SetHP(playerHP);
+                localDead = singleplayerDead;
+                localRespawnTimer = singleplayerRespawnTimer;
+            }
+
+            UpdateCaveState(player, world, inCave, caveEntranceX, caveEntranceY, multiplayerActive);
 
             if (mpMode == MpMode::Host && serverReady)
-            {
-                Server_Update(&server, dt);
-            }
-            else if (mpMode == MpMode::Client && clientReady)
-            {
-                Client_SendInput(&client, &netInput);
-                Client_Update(&client, dt);
-                if (!Client_IsConnected(&client))
-                {
-                    mpMode = MpMode::None;
-                    remotePlayers.clear();
-                    clientReady = false;
-                    pendingInputs.clear();
-                    inputSeq = 0;
-                }
-            }
+                UpdateHostMobs(player, world, server, mobSyncTimer, isNight, dt);
 
-            NetPlayerState snap[NET_MAX_PLAYERS];
-            int snapCount = 0;
-            uint8_t localId = 0;
-            bool snapNight = isNight;
-            float snapCycle = cycleTimer;
-            
-            if (mpMode == MpMode::Host && serverReady)
-            {
-                localId = 0;
-                snapCount = Server_GetSnapshot(&server, snap, NET_MAX_PLAYERS, &snapNight, &snapCycle);
-            }
-            else if (mpMode == MpMode::Client && clientReady)
-            {
-                localId = client.playerId;
-                snapCount = Client_GetSnapshot(&client, snap, NET_MAX_PLAYERS, &snapNight, &snapCycle);
-            }
-
-            ProcessNetworkSnapshot(snap, snapCount, localId, player, remotePlayers,
-                                  pendingInputs, world, swordSprite, mpMode, dt,
-                                  localDead, localRespawnTimer);
-
-            isNight = snapNight;
-            cycleTimer = snapCycle;
+            if (!multiplayerActive)
+                UpdateDayNightCycle(isNight, cycleTimer, DAY_DURATION, NIGHT_DURATION, NIGHT_FADE, fogStrength, dt);
         }
-
-        camera.x = player.GetX() - halfW / camera.zoom;
-        camera.y = player.GetY() - halfH / camera.zoom;
-
-        float playerHP = player.GetHP();
-        if (multiplayerActive)
-        {
-            float dummyHP = playerHP;
-            world->Update(dt, isNight ? 1 : 0, player.GetX(), player.GetY(), 
-                         player.GetX(), player.GetY(), player.GetSize(), &dummyHP, false);
-        }
-        else
-        {
-            if (!singleplayerDead && playerHP <= 0.0f)
-            {
-                singleplayerDead = true;
-                singleplayerRespawnTimer = RESPAWN_TIME_SECONDS;
-                playerHP = 0.0f;
-                player.SetHP(0.0f);
-            }
-            if (singleplayerDead)
-            {
-                singleplayerRespawnTimer -= dt;
-                if (singleplayerRespawnTimer <= 0.0f)
-                {
-                    singleplayerRespawnTimer = 0.0f;
-                    singleplayerDead = false;
-                    player.SetPosition(0.0f, 0.0f);
-                    playerHP = 100.0f;
-                }
-            }
-
-            world->Update(dt, isNight ? 1 : 0, player.GetX(), player.GetY(),
-                         player.GetX(), player.GetY(), player.GetSize(), &playerHP, !singleplayerDead);
-            player.SetHP(playerHP);
-            localDead = singleplayerDead;
-            localRespawnTimer = singleplayerRespawnTimer;
-        }
-
-        UpdateCaveState(player, world, inCave, caveEntranceX, caveEntranceY, multiplayerActive);
-
-        if (mpMode == MpMode::Host && serverReady)
-            UpdateHostMobs(player, world, server, mobSyncTimer, isNight, dt);
-
-        if (!multiplayerActive)
-            UpdateDayNightCycle(isNight, cycleTimer, DAY_DURATION, NIGHT_DURATION, NIGHT_FADE, fogStrength, dt);
 
         bool f3 = Input_IsKeyDown(KEY_F3);
         if (f3 && !prevF3)
             showDebug = !showDebug;
         prevF3 = f3;
 
+        if (mpMode == MpMode::None && Input_IsKeyPressed(KEY_F5))
+        {
+            GameSaveState state = {};
+            state.playerX = player.GetX();
+            state.playerY = player.GetY();
+            state.playerHP = player.GetHP();
+            state.inCave = inCave ? 1 : 0;
+            state.isNight = isNight ? 1 : 0;
+            state.cycleTimer = cycleTimer;
+            state.fogStrength = fogStrength;
+            state.caveEntranceX = caveEntranceX;
+            state.caveEntranceY = caveEntranceY;
+            Storage_SaveGame(world->GetRaw(), &state);
+            autoSaveTimer = 0.0f;
+        }
+
+        auto DrawPauseButton = [&](float x, float y, float w, float h, const char* text, bool enabled) -> bool
+        {
+            int mx = Input_GetMouseX();
+            int my = Input_GetMouseY();
+            bool hovered = enabled && mx >= (int)x && mx <= (int)(x + w) && my >= (int)y && my <= (int)(y + h);
+            bool pressed = hovered && Input_IsMouseReleased(MOUSE_LEFT);
+
+            Color fill = enabled
+                ? (hovered ? Color{0.35f, 0.35f, 0.40f, 0.95f} : Color{0.25f, 0.25f, 0.30f, 0.95f})
+                : Color{0.18f, 0.18f, 0.20f, 0.95f};
+            Color border = enabled ? Color{0.80f, 0.80f, 0.90f, 1.0f} : Color{0.40f, 0.40f, 0.45f, 1.0f};
+            Color txt = enabled ? Color{0.95f, 0.95f, 0.95f, 1.0f} : Color{0.60f, 0.60f, 0.65f, 1.0f};
+
+            Renderer_DrawRectangle(Rect{x, y, w, h}, fill);
+            Renderer_DrawRectangleLines(Rect{x, y, w, h}, 2.0f, border);
+            float tx = x + w * 0.5f - (float)std::strlen(text) * 4.0f;
+            float ty = y + h * 0.5f - 8.0f;
+            Renderer_DrawTextEx(text, tx, ty, 20.0f, txt, TEXT_STYLE_NORMAL);
+            return pressed;
+        };
+
         Renderer_BeginFrame(renderer);
-        Renderer_Clear(Color{0.5f, 0.8f, 1.0f, 1.0f});
+        if (inCave)
+            Renderer_Clear(Color{0.18f, 0.18f, 0.18f, 1.0f});
+        else
+            Renderer_Clear(Color{0.5f, 0.8f, 1.0f, 1.0f});
 
         BeginCameraMode(camera);
         world->Draw(camera, 800, 600, mpMode != MpMode::Client);
@@ -349,55 +456,74 @@ int main(int argc, char** argv)
         if (showDebug)
             DrawDebugInfo(player, world, renderer, camera, inCave, isNight, cycleTimer,
                          DAY_DURATION, NIGHT_DURATION, fogStrength);
-
-        MpUiResult uiResult = DrawMultiplayerUI(&ui, &uiX, &uiY, uiW, uiH, 
-                                               mpMode, 1 + (int)remotePlayers.size(), 
-                                               ipBuffer, (int)sizeof(ipBuffer), 
-                                               portBuffer, (int)sizeof(portBuffer));
-
-        inventory.Draw(10.0f, (float)renderer->height - 50.0f, 32.0f);
-        player.DrawStamina();
-        player.DrawHP();
-        if (localDead)
+        bool exitToMenuNow = false;
+        if (!pauseMenuOpen)
         {
-            float pulse = 0.45f + 0.15f * sinf((float)GetTime() * 6.0f);
-            Renderer_DrawRectangle(
-                Rect{0.0f, 0.0f, (float)renderer->width, (float)renderer->height},
-                Color{0.8f, 0.0f, 0.0f, pulse}
-            );
+            MpUiResult uiResult = DrawMultiplayerUI(&ui, &uiX, &uiY, uiW, uiH,
+                                                   mpMode, 1 + (int)remotePlayers.size(),
+                                                   ipBuffer, (int)sizeof(ipBuffer),
+                                                   portBuffer, (int)sizeof(portBuffer));
 
-            char respawnText[96];
-            snprintf(respawnText, sizeof(respawnText), "Respawn in %.1f sec",
-                     (localRespawnTimer > 0.0f) ? localRespawnTimer : 0.0f);
-            float centerX = (float)renderer->width * 0.5f;
-            float centerY = (float)renderer->height * 0.5f;
-
-            auto estimateTextWidth = [](const char* text, float fontSize) -> float
+            inventory.Draw(10.0f, (float)renderer->height - 50.0f, 32.0f);
+            player.DrawStamina();
+            player.DrawHP();
+            if (localDead)
             {
-                return (float)std::strlen(text) * fontSize * 0.56f;
-            };
+                float pulse = 0.45f + 0.15f * sinf((float)GetTime() * 6.0f);
+                Renderer_DrawRectangle(
+                    Rect{0.0f, 0.0f, (float)renderer->width, (float)renderer->height},
+                    Color{0.8f, 0.0f, 0.0f, pulse}
+                );
 
-            const char* diedText = "YOU DIED";
-            float diedFontSize = 54.0f;
-            float respawnFontSize = 30.0f;
-            float diedX = centerX - estimateTextWidth(diedText, diedFontSize) * 0.5f;
-            float respawnX = centerX - estimateTextWidth(respawnText, respawnFontSize) * 0.5f;
+                char respawnText[96];
+                snprintf(respawnText, sizeof(respawnText), "Respawn in %.1f sec",
+                         (localRespawnTimer > 0.0f) ? localRespawnTimer : 0.0f);
+                float centerX = (float)renderer->width * 0.5f;
+                float centerY = (float)renderer->height * 0.5f;
 
-            Renderer_DrawTextEx(diedText, diedX, centerY - 40.0f, diedFontSize,
-                               Color{1.0f, 1.0f, 1.0f, 1.0f}, TEXT_STYLE_OUTLINE_SHADOW);
-            Renderer_DrawTextEx(respawnText, respawnX, centerY + 20.0f, respawnFontSize,
-                               Color{1.0f, 1.0f, 1.0f, 1.0f}, TEXT_STYLE_OUTLINE_SHADOW);
-        }
+                auto estimateTextWidth = [](const char* text, float fontSize) -> float
+                {
+                    return (float)std::strlen(text) * fontSize * 0.56f;
+                };
 
-        if (uiResult.hostClicked)
-        {
-            int port = atoi(portBuffer);
-            if (port <= 0 || port > 65535) port = 7777;
-            if (LaunchServerProcess((uint16_t)port))
+                const char* diedText = "YOU DIED";
+                float diedFontSize = 54.0f;
+                float respawnFontSize = 30.0f;
+                float diedX = centerX - estimateTextWidth(diedText, diedFontSize) * 0.5f;
+                float respawnX = centerX - estimateTextWidth(respawnText, respawnFontSize) * 0.5f;
+
+                Renderer_DrawTextEx(diedText, diedX, centerY - 40.0f, diedFontSize,
+                                   Color{1.0f, 1.0f, 1.0f, 1.0f}, TEXT_STYLE_OUTLINE_SHADOW);
+                Renderer_DrawTextEx(respawnText, respawnX, centerY + 20.0f, respawnFontSize,
+                                   Color{1.0f, 1.0f, 1.0f, 1.0f}, TEXT_STYLE_OUTLINE_SHADOW);
+            }
+
+            if (uiResult.hostClicked)
             {
+                int port = atoi(portBuffer);
+                if (port <= 0 || port > 65535) port = 7777;
+                if (LaunchServerProcess((uint16_t)port))
+                {
+                    if (!clientReady)
+                        clientReady = Client_Init(&client);
+                    if (clientReady && Client_Connect(&client, "127.0.0.1", (uint16_t)port))
+                    {
+                        mpMode = MpMode::Client;
+                        remotePlayers.clear();
+                        pendingInputs.clear();
+                        inputSeq = 0;
+                    }
+                }
+                else
+                    remotePlayers.clear();
+            }
+            if (uiResult.joinClicked)
+            {
+                int port = atoi(portBuffer);
+                if (port <= 0 || port > 65535) port = 7777;
                 if (!clientReady)
                     clientReady = Client_Init(&client);
-                if (clientReady && Client_Connect(&client, "127.0.0.1", (uint16_t)port))
+                if (clientReady && Client_Connect(&client, ipBuffer, (uint16_t)port))
                 {
                     mpMode = MpMode::Client;
                     remotePlayers.clear();
@@ -405,25 +531,82 @@ int main(int argc, char** argv)
                     inputSeq = 0;
                 }
             }
-            else
-                remotePlayers.clear();
-        }
-        if (uiResult.joinClicked)
-        {
-            int port = atoi(portBuffer);
-            if (port <= 0 || port > 65535) port = 7777;
-            if (!clientReady)
-                clientReady = Client_Init(&client);
-            if (clientReady && Client_Connect(&client, ipBuffer, (uint16_t)port))
+            if (uiResult.disconnectClicked)
             {
-                mpMode = MpMode::Client;
+                if (mpMode == MpMode::Host && serverReady)
+                    Server_Shutdown(&server);
+                if (mpMode == MpMode::Client && clientReady)
+                    Client_Disconnect(&client);
+                mpMode = MpMode::None;
+                serverReady = false;
+                clientReady = false;
                 remotePlayers.clear();
                 pendingInputs.clear();
                 inputSeq = 0;
             }
         }
-        if (uiResult.disconnectClicked)
+        else
         {
+            Renderer_DrawRectangle(Rect{0.0f, 0.0f, (float)renderer->width, (float)renderer->height},
+                                  Color{0.0f, 0.0f, 0.0f, 0.55f});
+            float panelW = 320.0f;
+            float panelH = 280.0f;
+            float panelX = ((float)renderer->width - panelW) * 0.5f;
+            float panelY = ((float)renderer->height - panelH) * 0.5f;
+            Renderer_DrawRectangle(Rect{panelX, panelY, panelW, panelH}, Color{0.10f, 0.10f, 0.12f, 0.95f});
+            Renderer_DrawRectangleLines(Rect{panelX, panelY, panelW, panelH}, 2.0f, Color{0.85f, 0.85f, 0.9f, 1.0f});
+
+            Renderer_DrawTextEx("Paused", panelX + 112.0f, panelY + 24.0f, 34.0f,
+                               Color{1.0f, 1.0f, 1.0f, 1.0f}, TEXT_STYLE_OUTLINE_SHADOW);
+
+            if (DrawPauseButton(panelX + 40.0f, panelY + 84.0f, 240.0f, 44.0f, "Resume", true))
+                pauseMenuOpen = false;
+
+            bool canSave = (mpMode == MpMode::None);
+            if (DrawPauseButton(panelX + 40.0f, panelY + 138.0f, 240.0f, 44.0f, "Save World", canSave))
+            {
+                GameSaveState state = {};
+                state.playerX = player.GetX();
+                state.playerY = player.GetY();
+                state.playerHP = player.GetHP();
+                state.inCave = inCave ? 1 : 0;
+                state.isNight = isNight ? 1 : 0;
+                state.cycleTimer = cycleTimer;
+                state.fogStrength = fogStrength;
+                state.caveEntranceX = caveEntranceX;
+                state.caveEntranceY = caveEntranceY;
+                Storage_SaveGame(world->GetRaw(), &state);
+                autoSaveTimer = 0.0f;
+            }
+            if (!canSave)
+            {
+                Renderer_DrawTextEx("Saving is only available in singleplayer",
+                                   panelX + 24.0f, panelY + 190.0f, 14.0f,
+                                   Color{0.75f, 0.75f, 0.8f, 1.0f}, TEXT_STYLE_NORMAL);
+            }
+
+            if (DrawPauseButton(panelX + 40.0f, panelY + 222.0f, 240.0f, 40.0f, "Exit To Menu", true))
+                exitToMenuNow = true;
+        }
+
+        Renderer_EndFrame(renderer);
+
+        if (exitToMenuNow)
+        {
+            if (mpMode == MpMode::None && world)
+            {
+                GameSaveState state = {};
+                state.playerX = player.GetX();
+                state.playerY = player.GetY();
+                state.playerHP = player.GetHP();
+                state.inCave = inCave ? 1 : 0;
+                state.isNight = isNight ? 1 : 0;
+                state.cycleTimer = cycleTimer;
+                state.fogStrength = fogStrength;
+                state.caveEntranceX = caveEntranceX;
+                state.caveEntranceY = caveEntranceY;
+                Storage_SaveGame(world->GetRaw(), &state);
+            }
             if (mpMode == MpMode::Host && serverReady)
                 Server_Shutdown(&server);
             if (mpMode == MpMode::Client && clientReady)
@@ -434,13 +617,37 @@ int main(int argc, char** argv)
             remotePlayers.clear();
             pendingInputs.clear();
             inputSeq = 0;
+            localDead = false;
+            localRespawnTimer = 0.0f;
+            if (world)
+            {
+                delete world;
+                world = nullptr;
+            }
+            pauseMenuOpen = false;
+            currentGameState = STATE_MENU;
+            mainMenu.SetGameState(STATE_MENU);
+            continue;
         }
-
-        Renderer_EndFrame(renderer);
 
         char buffer[256];
         snprintf(buffer, sizeof(buffer), "Eternal Night - FPS: %.2f", GetFPS());
         Window_SetTitle(window, buffer);
+    }
+
+    if (world && mpMode == MpMode::None)
+    {
+        GameSaveState state = {};
+        state.playerX = player.GetX();
+        state.playerY = player.GetY();
+        state.playerHP = player.GetHP();
+        state.inCave = inCave ? 1 : 0;
+        state.isNight = isNight ? 1 : 0;
+        state.cycleTimer = cycleTimer;
+        state.fogStrength = fogStrength;
+        state.caveEntranceX = caveEntranceX;
+        state.caveEntranceY = caveEntranceY;
+        Storage_SaveGame(world->GetRaw(), &state);
     }
 
     if (clientReady)

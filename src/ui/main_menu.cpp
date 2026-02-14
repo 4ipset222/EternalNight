@@ -1,5 +1,6 @@
 #include "main_menu.h"
 #include "../engine/forge.h"
+#include "../engine/storage.h"
 #include <cstdio>
 #include <cmath>
 #include <cstring>
@@ -190,17 +191,30 @@ void MainMenu::DrawMainMenu()
     Renderer_DrawTextEx(title, 40.0f, 50.0f, 56, {0.2f, 1.0f, 0.8f, 1.0f}, TEXT_STYLE_SHADOW);
     
     bool playPressed = false;
-    DrawButton9Slice(rightX, centerY - 100.0f, 220.0f, 70.0f, "Play", playPressed);
+    DrawButton9Slice(rightX, centerY - 130.0f, 220.0f, 70.0f, "New World", playPressed);
     if (playPressed)
     {
         gameState = STATE_NEW_GAME;
     }
+
+    bool loadPressed = false;
+    DrawButton9Slice(rightX, centerY - 40.0f, 220.0f, 70.0f, "Load World", loadPressed);
+    if (loadPressed && Storage_HasSave())
+    {
+        gameState = STATE_LOAD_GAME;
+    }
     
     bool exitPressed = false;
-    DrawButton9Slice(rightX, centerY + 30.0f, 220.0f, 70.0f, "Exit", exitPressed);
+    DrawButton9Slice(rightX, centerY + 50.0f, 220.0f, 70.0f, "Exit", exitPressed);
     if (exitPressed)
     {
         gameState = STATE_EXITING;
+    }
+
+    if (!Storage_HasSave())
+    {
+        Renderer_DrawTextEx("No save found", rightX + 34.0f, centerY + 35.0f, 16.0f,
+                           Color{1.0f, 0.7f, 0.7f, 1.0f}, TEXT_STYLE_NORMAL);
     }
 }
 

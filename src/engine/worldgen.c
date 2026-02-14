@@ -8,9 +8,12 @@
 
 #define NUM_THREADS 4
 
-static inline long long ChunkKey(int cx, int cy)
+static inline long long ChunkKey(int cx, int cy, int mode)
 {
-    return ((long long)(int)cx << 32) | (unsigned int)(int)cy;
+    unsigned long long x = (unsigned int)(int)cx;
+    unsigned long long y = (unsigned int)(int)cy;
+    unsigned long long m = (unsigned int)(mode ? 1 : 0);
+    return (long long)((x << 33) ^ (y << 1) ^ m);
 }
 
 static unsigned int ChunkHash(long long key, unsigned int cap)
@@ -19,9 +22,23 @@ static unsigned int ChunkHash(long long key, unsigned int cap)
     return (unsigned int)((k * 2654435761ULL) % (unsigned long long)cap);
 }
 
-static Chunk* World_GetChunk(ForgeWorld* world, int cx, int cy)
+static unsigned int World_Hash3(int a, int b, int c)
 {
-    long long key = ChunkKey(cx, cy);
+    unsigned int x = (unsigned int)a * 0x9E3779B9u;
+    unsigned int y = (unsigned int)b * 0x85EBCA6Bu;
+    unsigned int z = (unsigned int)c * 0xC2B2AE35u;
+    unsigned int h = x ^ y ^ z;
+    h ^= h >> 16;
+    h *= 0x7FEB352Du;
+    h ^= h >> 15;
+    h *= 0x846CA68Bu;
+    h ^= h >> 16;
+    return h;
+}
+
+static Chunk* World_GetChunk(ForgeWorld* world, int cx, int cy, int mode)
+{
+    long long key = ChunkKey(cx, cy, mode);
     unsigned int idx = ChunkHash(key, (unsigned int)world->chunkCapacity);
     for (unsigned int n = 0; n < (unsigned int)world->chunkCapacity; n++)
     {
@@ -34,11 +51,11 @@ static Chunk* World_GetChunk(ForgeWorld* world, int cx, int cy)
     return NULL;
 }
 
-static int World_InsertChunk(ForgeWorld* world, int cx, int cy, Chunk* chunk)
+static int World_InsertChunk(ForgeWorld* world, int cx, int cy, int mode, Chunk* chunk)
 {
     if (world->chunkCount >= world->chunkCapacity)
         return 0;
-    long long key = ChunkKey(cx, cy);
+    long long key = ChunkKey(cx, cy, mode);
     unsigned int idx = ChunkHash(key, (unsigned int)world->chunkCapacity);
     unsigned int tombstone = (unsigned int)(-1);
     for (unsigned int n = 0; n < (unsigned int)world->chunkCapacity; n++)
@@ -446,6 +463,8 @@ void Chunk_Generate(Chunk* chunk, int seed, bool isCave, float waterAmount, floa
 
     int baseX = chunk->cx * CHUNK_SIZE;
     int baseY = chunk->cy * CHUNK_SIZE;
+    int entranceCandidates[CHUNK_SIZE * CHUNK_SIZE];
+    int entranceCandidateCount = 0;
 
     for (int y = 0; y < CHUNK_SIZE; y++)
     {
@@ -473,6 +492,25 @@ void Chunk_Generate(Chunk* chunk, int seed, bool isCave, float waterAmount, floa
             float moisture = FractalPerlin2D(nx * 0.12f, ny * 0.12f, 3, 0.5f);
 
             Tile* tile = &chunk->tiles[y * CHUNK_SIZE + x];
+
+            if (isCave)
+            {
+                float tunnel = FractalPerlin2D(nx * 0.26f + 100.0f, ny * 0.26f - 73.0f, 3, 0.55f);
+                float chamber = FractalPerlin2D(nx * 0.06f - 41.0f, ny * 0.06f + 59.0f, 2, 0.5f);
+                float openValue = tunnel * 0.85f + chamber * 0.15f;
+                float openThreshold = 0.67f - caveAmount * 0.07f;
+
+                if (openValue > openThreshold)
+                {
+                    float puddle = FractalPerlin2D(nx * 0.33f + 17.0f, ny * 0.33f - 12.0f, 1, 0.5f);
+                    tile->type = (puddle < 0.10f) ? TILE_WATER : TILE_DIRT;
+                }
+                else
+                {
+                    tile->type = TILE_STONE;
+                }
+                continue;
+            }
 
             if (height < adjustedOceanLevel)
             {
@@ -528,14 +566,34 @@ void Chunk_Generate(Chunk* chunk, int seed, bool isCave, float waterAmount, floa
                 }
             }
 
-            if (!isCave && tile->type == TILE_STONE && moisture > 0.3f && height > hillLevel * 0.8f)
+            if (tile->type == TILE_STONE && moisture > 0.22f && height > hillLevel)
+                entranceCandidates[entranceCandidateCount++] = y * CHUNK_SIZE + x;
+        }
+    }
+
+    if (!isCave)
+    {
+        float chunkEntranceChance = 0.06f + caveAmount * 0.28f;
+        if (abs(chunk->cx) <= 1 && abs(chunk->cy) <= 1)
+            chunkEntranceChance = 0.75f;
+
+        unsigned int rollHash = World_Hash3(seed ^ 0x1F123BB5, chunk->cx, chunk->cy);
+        float roll = (float)(rollHash & 0x00FFFFFFu) / (float)0x01000000u;
+        if (roll < chunkEntranceChance)
+        {
+            if (entranceCandidateCount > 0)
             {
-                float caveProb = FractalPerlin2D(nx * 0.05f, ny * 0.05f, 1, 0.5f);
-                float caveThreshold = 0.8f - caveAmount * 0.5f;
-                if (caveProb > caveThreshold)
-                {
-                    tile->type = TILE_CAVE_ENTRANCE;
-                }
+                unsigned int pickHash = World_Hash3(seed ^ 0x57A9D21F, chunk->cx, chunk->cy);
+                int pick = (int)(pickHash % (unsigned int)entranceCandidateCount);
+                int idx = entranceCandidates[pick];
+                chunk->tiles[idx].type = TILE_CAVE_ENTRANCE;
+            }
+            else if (abs(chunk->cx) <= 1 && abs(chunk->cy) <= 1)
+            {
+                int mid = (CHUNK_SIZE / 2) * CHUNK_SIZE + (CHUNK_SIZE / 2);
+                TileType t = chunk->tiles[mid].type;
+                if (t != TILE_WATER && t != TILE_DEEP_WATER)
+                    chunk->tiles[mid].type = TILE_CAVE_ENTRANCE;
             }
         }
     }
@@ -547,6 +605,7 @@ ForgeWorld* World_Create(int loadRadiusChunks, int seed)
 {
     ForgeWorld* world = malloc(sizeof(ForgeWorld));
     world->seed = seed;
+    world->isCave = 0;
     world->loadRadiusChunks = loadRadiusChunks > 0 ? loadRadiusChunks : WORLD_LOAD_RADIUS_CHUNKS;
     world->chunkCapacity = WORLD_CHUNK_CAPACITY;
     world->chunkCount = 0;
@@ -617,7 +676,6 @@ int World_CheckCaveEntrance(ForgeWorld* world, float playerX, float playerY, flo
     int px = (int)floorf(playerX / tileSize);
     int py = (int)floorf(playerY / tileSize);
     
-    /* Check tiles around player for cave entrance */
     int checkRadius = (int)ceilf(radius / tileSize) + 1;
     for (int dy = -checkRadius; dy <= checkRadius; dy++)
     {
@@ -637,6 +695,46 @@ int World_CheckCaveEntrance(ForgeWorld* world, float playerX, float playerY, flo
         }
     }
     return 0;
+}
+
+int World_FindNearestCaveEntrance(ForgeWorld* world, float playerX, float playerY, float radius, float* outX, float* outY)
+{
+    if (!world || !outX || !outY) return 0;
+
+    const float tileSize = 16.0f;
+    int px = (int)floorf(playerX / tileSize);
+    int py = (int)floorf(playerY / tileSize);
+
+    int checkRadius = (int)ceilf(radius / tileSize) + 1;
+    float bestDistSq = radius * radius;
+    int found = 0;
+
+    for (int dy = -checkRadius; dy <= checkRadius; dy++)
+    {
+        for (int dx = -checkRadius; dx <= checkRadius; dx++)
+        {
+            int tx = px + dx;
+            int ty = py + dy;
+            TileType tile = World_GetTile(world, tx, ty);
+            if (tile != TILE_CAVE_ENTRANCE)
+                continue;
+
+            float cx = (float)(tx * (int)tileSize + (int)(tileSize * 0.5f));
+            float cy = (float)(ty * (int)tileSize + (int)(tileSize * 0.5f));
+            float ddx = cx - playerX;
+            float ddy = cy - playerY;
+            float distSq = ddx * ddx + ddy * ddy;
+            if (distSq <= bestDistSq)
+            {
+                bestDistSq = distSq;
+                *outX = cx;
+                *outY = cy;
+                found = 1;
+            }
+        }
+    }
+
+    return found;
 }
 
 void World_SaveCaveEntrance(ForgeWorld* world, float x, float y)
@@ -661,18 +759,6 @@ void World_SetCaveMode(ForgeWorld* world, int isCave)
         return;
 
     world->isCave = isCave;
-
-    for (int i = 0; i < world->chunkCapacity; i++)
-    {
-        if (world->chunkMap[i].state == 1 && world->chunkMap[i].chunk)
-            free(world->chunkMap[i].chunk);
-
-        world->chunkMap[i].state = 0;
-        world->chunkMap[i].chunk = NULL;
-        world->chunkMap[i].key = 0;
-    }
-
-    world->chunkCount = 0;
 }
 
 void World_ReloadChunks(ForgeWorld* world)
@@ -718,9 +804,6 @@ void World_UpdateChunks(ForgeWorld* world, int centerChunkX, int centerChunkY)
     int minCy = centerChunkY - r;
     int maxCy = centerChunkY + r;
 
-    /* Don't unload chunks - keep them in memory for persistence */
-    /* Chunks remain loaded once generated */
-
     int loadedThisUpdate = 0;
     for (int cy = minCy; cy <= maxCy; cy++)
     {
@@ -728,7 +811,7 @@ void World_UpdateChunks(ForgeWorld* world, int centerChunkX, int centerChunkY)
         {
             if (loadedThisUpdate >= WORLD_MAX_CHUNKS_PER_UPDATE)
                 return;
-            if (World_GetChunk(world, cx, cy))
+            if (World_GetChunk(world, cx, cy, world->isCave))
                 continue;
             if (world->chunkCount >= world->chunkCapacity)
                 break;
@@ -739,7 +822,7 @@ void World_UpdateChunks(ForgeWorld* world, int centerChunkX, int centerChunkY)
             chunk->cy = cy;
             chunk->generated = 0;
             Chunk_Generate(chunk, world->seed, world->isCave, world->waterAmount, world->stoneAmount, world->caveAmount);
-            if (!World_InsertChunk(world, cx, cy, chunk))
+            if (!World_InsertChunk(world, cx, cy, world->isCave, chunk))
                 free(chunk);
             else
                 loadedThisUpdate++;
@@ -752,7 +835,7 @@ TileType World_GetTile(ForgeWorld* world, int x, int y)
     int cx = (int)(x < 0 ? (x - CHUNK_SIZE + 1) / CHUNK_SIZE : x / CHUNK_SIZE);
     int cy = (int)(y < 0 ? (y - CHUNK_SIZE + 1) / CHUNK_SIZE : y / CHUNK_SIZE);
 
-    Chunk* chunk = World_GetChunk(world, cx, cy);
+    Chunk* chunk = World_GetChunk(world, cx, cy, world->isCave);
     if (!chunk)
     {
         if (world->chunkCount >= world->chunkCapacity)
@@ -767,7 +850,7 @@ TileType World_GetTile(ForgeWorld* world, int x, int y)
         newChunk->generated = 0;
         Chunk_Generate(newChunk, world->seed, world->isCave, world->waterAmount, world->stoneAmount, world->caveAmount);
 
-        if (!World_InsertChunk(world, cx, cy, newChunk))
+        if (!World_InsertChunk(world, cx, cy, world->isCave, newChunk))
         {
             free(newChunk);
             return TILE_EMPTY;
@@ -794,7 +877,7 @@ int World_SetTile(ForgeWorld* world, int x, int y, TileType type)
     int cx = (int)(x < 0 ? (x - CHUNK_SIZE + 1) / CHUNK_SIZE : x / CHUNK_SIZE);
     int cy = (int)(y < 0 ? (y - CHUNK_SIZE + 1) / CHUNK_SIZE : y / CHUNK_SIZE);
 
-    Chunk* chunk = World_GetChunk(world, cx, cy);
+    Chunk* chunk = World_GetChunk(world, cx, cy, world->isCave);
     if (!chunk)
     {
         if (world->chunkCount >= world->chunkCapacity)
@@ -809,7 +892,7 @@ int World_SetTile(ForgeWorld* world, int x, int y, TileType type)
         newChunk->generated = 0;
         Chunk_Generate(newChunk, world->seed, world->isCave, world->waterAmount, world->stoneAmount, world->caveAmount);
 
-        if (!World_InsertChunk(world, cx, cy, newChunk))
+        if (!World_InsertChunk(world, cx, cy, world->isCave, newChunk))
         {
             free(newChunk);
             return 0;

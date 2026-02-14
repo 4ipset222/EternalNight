@@ -7,6 +7,7 @@
 #include "perlin.h"
 #include "renderer.h"
 #include "rendertexture.h"
+#include "storage.h"
 #include "timer.h"
 #include "window.h"
 #include "worldgen.h"

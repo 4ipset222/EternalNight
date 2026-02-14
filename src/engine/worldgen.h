@@ -37,7 +37,7 @@ typedef struct
     int generated;
 } Chunk;
 
-#define WORLD_CHUNK_CAPACITY 512
+#define WORLD_CHUNK_CAPACITY 2048
 #define WORLD_LOAD_RADIUS_CHUNKS 3
 #define WORLD_MAX_CHUNKS_PER_UPDATE 2
 
@@ -132,8 +132,8 @@ int  World_PlayerAttack(ForgeWorld* world, float originX, float originY, float d
 const Mob* World_GetMobs(const ForgeWorld* world, int* outCount);
 const MobArchetype* World_GetMobArchetypes(const ForgeWorld* world, int* outCount);
 
-/* Cave entrance management */
 int  World_CheckCaveEntrance(ForgeWorld* world, float playerX, float playerY, float radius);
+int  World_FindNearestCaveEntrance(ForgeWorld* world, float playerX, float playerY, float radius, float* outX, float* outY);
 void World_SaveCaveEntrance(ForgeWorld* world, float x, float y);
 void World_RestoreCaveExit(ForgeWorld* world, float* outX, float* outY);
 

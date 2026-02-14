@@ -9,8 +9,9 @@ enum GameState
 {
     STATE_MENU = 0,
     STATE_NEW_GAME = 1,
-    STATE_PLAYING = 2,
-    STATE_EXITING = 3
+    STATE_LOAD_GAME = 2,
+    STATE_PLAYING = 3,
+    STATE_EXITING = 4
 };
 
 struct WorldConfig

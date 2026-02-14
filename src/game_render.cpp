@@ -53,7 +53,7 @@ void DrawDebugInfo(const Player& player, World* world, const Renderer* renderer,
     );
 
     Renderer_DrawTextEx(dbg, 10, 10, 16, Color{1, 1, 0, 1}, TEXT_STYLE_OUTLINE_SHADOW);
-    Renderer_DrawTextEx(" WASD - move\n LMB - attack(sword)\n 1-5 - select hotbar\n Esc - toggle inventory\n Q/E - zoom\n F3 - debug info",
+    Renderer_DrawTextEx(" WASD - move\n LMB - attack(sword)\n 1-5 - select hotbar\n Tab - toggle inventory\n Esc - pause menu\n Q/E - zoom\n F3 - debug info",
                        (float)renderer->width - 140, 10, 14, Color{1, 1, 1, 1}, TEXT_STYLE_OUTLINE_SHADOW);
 }
 

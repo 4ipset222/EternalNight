@@ -20,6 +20,7 @@ add_library(forge SHARED
     src/engine/window.c
     src/engine/timer.c
     src/engine/worldgen.c
+    src/engine/storage.c
 )
 
 if(WIN32)

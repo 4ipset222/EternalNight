@@ -140,7 +140,7 @@ void Inventory::Draw(float startX, float startY, float slotSize)
 
 void Inventory::Update()
 {
-    if (Input_IsKeyPressed(KEY_ESCAPE))
+    if (Input_IsKeyPressed(KEY_TAB))
         isExpanded = !isExpanded;
 
     for (int i = 0; i < HOTBAR_SLOTS; i++)
