@@ -1,5 +1,6 @@
 #include "renderer.h"
 #include "forgesystem.h"
+#include "renderer_d2d.h"
 #include <stdlib.h>
 #include <GL/glew.h>
 #include <png.h>
@@ -16,6 +17,108 @@ static FT_Library g_ft_lib = NULL;
 static bool g_ft_inited = false;
 static Font* g_default_font = NULL;
 static bool g_default_font_attempted = false;
+
+static int IsD2DBackend(const Renderer* r)
+{
+    return r && r->backend == RENDERER_BACKEND_DIRECT2D && r->backend_ctx != NULL;
+}
+
+static Vec2 TransformPointForBackend(Vec2 p)
+{
+    if (!g_renderer || !g_renderer->camera_mode)
+    {
+        return p;
+    }
+
+    float zoom = g_renderer->camera_zoom;
+    Vec2 out = {
+        (p.x - g_renderer->camera_x) * zoom,
+        (p.y - g_renderer->camera_y) * zoom
+    };
+    return out;
+}
+
+static Rect TransformRectForBackend(Rect r)
+{
+    if (!g_renderer || !g_renderer->camera_mode)
+    {
+        return r;
+    }
+
+    float zoom = g_renderer->camera_zoom;
+    Rect out = {
+        (r.x - g_renderer->camera_x) * zoom,
+        (r.y - g_renderer->camera_y) * zoom,
+        r.width * zoom,
+        r.height * zoom
+    };
+    return out;
+}
+
+static float TransformLengthForBackend(float v)
+{
+    if (!g_renderer || !g_renderer->camera_mode)
+    {
+        return v;
+    }
+    return v * g_renderer->camera_zoom;
+}
+
+typedef struct D2DTextureCacheEntry
+{
+    char path[260];
+    void* bitmap;
+} D2DTextureCacheEntry;
+
+static D2DTextureCacheEntry g_d2d_tex_cache[256];
+static int g_d2d_tex_cache_count = 0;
+
+static void ClearD2DTextureCache(void)
+{
+    for (int i = 0; i < g_d2d_tex_cache_count; ++i)
+    {
+        if (g_d2d_tex_cache[i].bitmap)
+        {
+            D2DRenderer_FreeBitmap(g_d2d_tex_cache[i].bitmap);
+            g_d2d_tex_cache[i].bitmap = NULL;
+        }
+    }
+    g_d2d_tex_cache_count = 0;
+}
+
+static void* GetOrLoadD2DBitmap(const Texture2D* texture)
+{
+    if (!texture || !IsD2DBackend(g_renderer) || texture->path[0] == '\0')
+    {
+        return NULL;
+    }
+
+    for (int i = 0; i < g_d2d_tex_cache_count; ++i)
+    {
+        if (strcmp(g_d2d_tex_cache[i].path, texture->path) == 0)
+        {
+            return g_d2d_tex_cache[i].bitmap;
+        }
+    }
+
+    int w = 0;
+    int h = 0;
+    void* bmp = D2DRenderer_LoadBitmap((D2DRenderer*)g_renderer->backend_ctx, texture->path, &w, &h);
+    if (!bmp)
+    {
+        return NULL;
+    }
+
+    if (g_d2d_tex_cache_count < (int)(sizeof(g_d2d_tex_cache) / sizeof(g_d2d_tex_cache[0])))
+    {
+        D2DTextureCacheEntry* e = &g_d2d_tex_cache[g_d2d_tex_cache_count++];
+        strncpy(e->path, texture->path, sizeof(e->path) - 1);
+        e->path[sizeof(e->path) - 1] = '\0';
+        e->bitmap = bmp;
+    }
+
+    return bmp;
+}
 
 void SetGlobalRenderer(Renderer* r)
 {
@@ -265,14 +368,6 @@ Texture2D* LoadTexture(const char* path)
     png_read_image(png_ptr, row_pointers);
     fclose(fp);
 
-    GLuint tex_id;
-    glGenTextures(1, &tex_id);
-    glBindTexture(GL_TEXTURE_2D, tex_id);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-
     png_byte* data = (png_byte*)malloc(width * height * 4);
     for (png_uint_32 y = 0; y < height; ++y)
     {
@@ -281,14 +376,31 @@ Texture2D* LoadTexture(const char* path)
     }
     free(row_pointers);
 
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0,
-                 GL_RGBA, GL_UNSIGNED_BYTE, data);
+    GLuint tex_id = 0;
+    if (!g_renderer || Renderer_GetBackend(g_renderer) == RENDERER_BACKEND_OPENGL)
+    {
+        glGenTextures(1, &tex_id);
+        glBindTexture(GL_TEXTURE_2D, tex_id);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0,
+                     GL_RGBA, GL_UNSIGNED_BYTE, data);
+    }
     free(data);
 
     Texture2D* texture = (Texture2D*)malloc(sizeof(Texture2D));
     texture->id = tex_id;
     texture->width  = width;
     texture->height = height;
+    texture->native_handle = NULL;
+    texture->path[0] = '\0';
+    if (path)
+    {
+        strncpy(texture->path, path, sizeof(texture->path) - 1);
+        texture->path[sizeof(texture->path) - 1] = '\0';
+    }
 
     return texture;
 }
@@ -297,7 +409,10 @@ void UnloadTexture(Texture2D* texture)
 {
     if (texture)
     {
-        glDeleteTextures(1, &texture->id);
+        if (texture->id != 0)
+        {
+            glDeleteTextures(1, &texture->id);
+        }
         free(texture);
     }
 }
@@ -308,6 +423,12 @@ Renderer* Renderer_Create(Window* window)
     r->window = window;
     r->width  = window->width;
     r->height = window->height;
+    r->backend = RENDERER_BACKEND_OPENGL;
+    r->backend_ctx = NULL;
+    r->camera_mode = 0;
+    r->camera_x = 0.0f;
+    r->camera_y = 0.0f;
+    r->camera_zoom = 1.0f;
 
     glViewport(0, 0, r->width, r->height);
     glEnable(GL_BLEND);
@@ -391,8 +512,86 @@ Renderer* Renderer_Create(Window* window)
     return r;
 }
 
+int Renderer_SetBackend(Renderer* r, RendererBackend backend)
+{
+    if (!r)
+    {
+        return 0;
+    }
+
+    if ((RendererBackend)r->backend == backend)
+    {
+        return 1;
+    }
+
+    if (backend == RENDERER_BACKEND_DIRECT2D)
+    {
+        ClearD2DTextureCache();
+        D2DRenderer* d2d = D2DRenderer_Create(r->window->handle, r->width, r->height);
+        if (!d2d)
+        {
+            dbg_msg("Renderer", "Failed to create Direct2D backend");
+            return 0;
+        }
+        if (r->backend_ctx)
+        {
+            D2DRenderer_Destroy((D2DRenderer*)r->backend_ctx);
+        }
+        r->backend_ctx = d2d;
+        r->backend = RENDERER_BACKEND_DIRECT2D;
+        dbg_msg("Renderer", "Switched backend to Direct2D");
+        return 1;
+    }
+
+    if (backend == RENDERER_BACKEND_OPENGL)
+    {
+        if (r->backend_ctx)
+        {
+            D2DRenderer_Destroy((D2DRenderer*)r->backend_ctx);
+            ClearD2DTextureCache();
+            r->backend_ctx = NULL;
+        }
+        r->backend = RENDERER_BACKEND_OPENGL;
+        dbg_msg("Renderer", "Switched backend to OpenGL");
+        return 1;
+    }
+
+    return 0;
+}
+
+RendererBackend Renderer_GetBackend(const Renderer* r)
+{
+    if (!r)
+    {
+        return RENDERER_BACKEND_OPENGL;
+    }
+    return (RendererBackend)r->backend;
+}
+
+const char* Renderer_GetBackendName(RendererBackend backend)
+{
+    switch (backend)
+    {
+        case RENDERER_BACKEND_DIRECT2D: return "Direct2D";
+        case RENDERER_BACKEND_OPENGL:
+        default: return "OpenGL";
+    }
+}
+
 void Renderer_Destroy(Renderer* r)
 {
+    if (!r)
+    {
+        return;
+    }
+
+    if (r->backend_ctx)
+    {
+        D2DRenderer_Destroy((D2DRenderer*)r->backend_ctx);
+        ClearD2DTextureCache();
+        r->backend_ctx = NULL;
+    }
+
     if (g_default_font)
     {
         UnloadFont(g_default_font);
@@ -422,23 +621,47 @@ void Renderer_Destroy(Renderer* r)
 
 void Renderer_BeginFrame(Renderer* r)
 {
+    if (IsD2DBackend(r))
+    {
+        D2DRenderer_BeginFrame((D2DRenderer*)r->backend_ctx);
+        D2DRenderer_Clear((D2DRenderer*)r->backend_ctx, (Color){0.0f, 0.0f, 0.0f, 1.0f});
+        return;
+    }
+
     glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 }
 
 void Renderer_EndFrame(Renderer* r)
 {
+    if (IsD2DBackend(r))
+    {
+        D2DRenderer_EndFrame((D2DRenderer*)r->backend_ctx);
+        return;
+    }
     SDL_GL_SwapWindow(r->window->handle);
 }
 
 void Renderer_Clear(Color color)
 {
+    if (IsD2DBackend(g_renderer))
+    {
+        D2DRenderer_Clear((D2DRenderer*)g_renderer->backend_ctx, color);
+        return;
+    }
     glClearColor(color.r, color.g, color.b, color.a);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 }
 
 void Renderer_DrawRectangle(Rect rect, Color color)
 {
+    if (IsD2DBackend(g_renderer))
+    {
+        Rect r = TransformRectForBackend(rect);
+        D2DRenderer_DrawRectangle((D2DRenderer*)g_renderer->backend_ctx, r, color);
+        return;
+    }
+
     float vertices[] =
     {
         rect.x, rect.y,
@@ -469,6 +692,23 @@ void Renderer_DrawRectangle(Rect rect, Color color)
 
 void Renderer_DrawTrianglesColored(const float* positions, const float* colors, int vertexCount)
 {
+    if (IsD2DBackend(g_renderer))
+    {
+        if (!positions || !colors || vertexCount <= 0) return;
+        float* transformed = (float*)malloc((size_t)vertexCount * 2 * sizeof(float));
+        if (!transformed) return;
+        for (int i = 0; i < vertexCount; ++i)
+        {
+            Vec2 p = { positions[i * 2 + 0], positions[i * 2 + 1] };
+            p = TransformPointForBackend(p);
+            transformed[i * 2 + 0] = p.x;
+            transformed[i * 2 + 1] = p.y;
+        }
+        D2DRenderer_DrawTrianglesColored((D2DRenderer*)g_renderer->backend_ctx, transformed, colors, vertexCount);
+        free(transformed);
+        return;
+    }
+
     if (!g_renderer) return;
     if (!positions || !colors || vertexCount <= 0) return;
 
@@ -488,6 +728,14 @@ void Renderer_DrawTrianglesColored(const float* positions, const float* colors, 
 
 void Renderer_DrawRectangleLines(Rect rect, int line_thick, Color color)
 {
+    if (IsD2DBackend(g_renderer))
+    {
+        Rect r = TransformRectForBackend(rect);
+        float thick = TransformLengthForBackend((float)line_thick);
+        D2DRenderer_DrawRectangleLines((D2DRenderer*)g_renderer->backend_ctx, r, thick, color);
+        return;
+    }
+
     float vertices[] =
     {
         rect.x, rect.y,
@@ -531,6 +779,14 @@ void Renderer_DrawRectangleLines(Rect rect, int line_thick, Color color)
 
 void Renderer_DrawCircle(Vec2 center, float radius, Color color)
 {
+    if (IsD2DBackend(g_renderer))
+    {
+        Vec2 c = TransformPointForBackend(center);
+        float r = TransformLengthForBackend(radius);
+        D2DRenderer_DrawCircle((D2DRenderer*)g_renderer->backend_ctx, c, r, color, 1);
+        return;
+    }
+
     const int segments = 32;
     float* vertices = (float*)malloc((segments + 2) * 2 * sizeof(float));
     float* colors = (float*)malloc((segments + 2) * 4 * sizeof(float));
@@ -591,6 +847,14 @@ void Renderer_DrawCircle(Vec2 center, float radius, Color color)
 
 void Renderer_DrawCircleLines(Vec2 center, float radius, Color color)
 {
+    if (IsD2DBackend(g_renderer))
+    {
+        Vec2 c = TransformPointForBackend(center);
+        float r = TransformLengthForBackend(radius);
+        D2DRenderer_DrawCircle((D2DRenderer*)g_renderer->backend_ctx, c, r, color, 0);
+        return;
+    }
+
     const int segments = 32;
     float* vertices = (float*)malloc(segments * 2 * sizeof(float));
     float* colors = (float*)malloc(segments * 4 * sizeof(float));
@@ -640,6 +904,14 @@ void Renderer_DrawCircleLines(Vec2 center, float radius, Color color)
 
 void Renderer_DrawLine(Vec2 start, Vec2 end, Color color)
 {
+    if (IsD2DBackend(g_renderer))
+    {
+        Vec2 s = TransformPointForBackend(start);
+        Vec2 e = TransformPointForBackend(end);
+        D2DRenderer_DrawLine((D2DRenderer*)g_renderer->backend_ctx, s, e, TransformLengthForBackend(1.0f), color);
+        return;
+    }
+
     float vertices[] =
     {
         start.x, start.y,
@@ -666,6 +938,14 @@ void Renderer_DrawLine(Vec2 start, Vec2 end, Color color)
 
 void Renderer_DrawLineEx(Vec2 start, Vec2 end, float thick, Color color)
 {
+    if (IsD2DBackend(g_renderer))
+    {
+        Vec2 s = TransformPointForBackend(start);
+        Vec2 e = TransformPointForBackend(end);
+        D2DRenderer_DrawLine((D2DRenderer*)g_renderer->backend_ctx, s, e, TransformLengthForBackend(thick), color);
+        return;
+    }
+
     float vertices[] =
     {
         start.x, start.y,
@@ -694,6 +974,15 @@ void Renderer_DrawLineEx(Vec2 start, Vec2 end, float thick, Color color)
 
 void Renderer_DrawTriangle(Vec2 v1, Vec2 v2, Vec2 v3, Color color)
 {
+    if (IsD2DBackend(g_renderer))
+    {
+        Vec2 a = TransformPointForBackend(v1);
+        Vec2 b = TransformPointForBackend(v2);
+        Vec2 c = TransformPointForBackend(v3);
+        D2DRenderer_DrawTriangle((D2DRenderer*)g_renderer->backend_ctx, a, b, c, color, 1);
+        return;
+    }
+
     float vertices[] =
     {
         v1.x, v1.y,
@@ -728,6 +1017,15 @@ void Renderer_DrawTriangle(Vec2 v1, Vec2 v2, Vec2 v3, Color color)
 
 void Renderer_DrawTriangleLines(Vec2 v1, Vec2 v2, Vec2 v3, Color color)
 {
+    if (IsD2DBackend(g_renderer))
+    {
+        Vec2 a = TransformPointForBackend(v1);
+        Vec2 b = TransformPointForBackend(v2);
+        Vec2 c = TransformPointForBackend(v3);
+        D2DRenderer_DrawTriangle((D2DRenderer*)g_renderer->backend_ctx, a, b, c, color, 0);
+        return;
+    }
+
     float vertices[] =
     {
         v1.x, v1.y,
@@ -767,6 +1065,23 @@ void Renderer_DrawTriangleLines(Vec2 v1, Vec2 v2, Vec2 v3, Color color)
 
 void Renderer_DrawTexture(Texture2D texture, Vec2 position, Color tint)
 {
+    if (IsD2DBackend(g_renderer))
+    {
+        Rect src = { 0.0f, 0.0f, (float)texture.width, (float)texture.height };
+        Rect dst = { position.x, position.y, (float)texture.width, (float)texture.height };
+        Rect dst_t = TransformRectForBackend(dst);
+        void* bmp = GetOrLoadD2DBitmap(&texture);
+        if (bmp)
+        {
+            D2DRenderer_DrawBitmap((D2DRenderer*)g_renderer->backend_ctx, bmp, src, dst_t, (Vec2){0.0f, 0.0f}, 0.0f, tint);
+        }
+        else
+        {
+            Renderer_DrawRectangle(dst, tint);
+        }
+        return;
+    }
+
     float vertices[] =
     {
         position.x, position.y,
@@ -838,6 +1153,22 @@ void Renderer_DrawTexture(Texture2D texture, Vec2 position, Color tint)
 
 void Renderer_DrawTextureRec(Texture2D texture, Rect source, Vec2 position, Color tint)
 {
+    if (IsD2DBackend(g_renderer))
+    {
+        Rect dst = { position.x, position.y, source.width, source.height };
+        Rect dst_t = TransformRectForBackend(dst);
+        void* bmp = GetOrLoadD2DBitmap(&texture);
+        if (bmp)
+        {
+            D2DRenderer_DrawBitmap((D2DRenderer*)g_renderer->backend_ctx, bmp, source, dst_t, (Vec2){0.0f, 0.0f}, 0.0f, tint);
+        }
+        else
+        {
+            Renderer_DrawRectangle(dst, tint);
+        }
+        return;
+    }
+
     if (!g_renderer) return;
     
     float u1 = source.x / texture.width;
@@ -916,6 +1247,24 @@ void Renderer_DrawTextureRec(Texture2D texture, Rect source, Vec2 position, Colo
 
 void Renderer_DrawTextureEx(Texture2D texture, Vec2 position, float rotation, float scale, Color tint)
 {
+    if (IsD2DBackend(g_renderer))
+    {
+        Rect src = { 0.0f, 0.0f, (float)texture.width, (float)texture.height };
+        Rect dst = { position.x, position.y, (float)texture.width * scale, (float)texture.height * scale };
+        Rect dst_t = TransformRectForBackend(dst);
+        Vec2 origin = { dst_t.width * 0.5f, dst_t.height * 0.5f };
+        void* bmp = GetOrLoadD2DBitmap(&texture);
+        if (bmp)
+        {
+            D2DRenderer_DrawBitmap((D2DRenderer*)g_renderer->backend_ctx, bmp, src, dst_t, origin, rotation, tint);
+        }
+        else
+        {
+            Renderer_DrawRectangle(dst, tint);
+        }
+        return;
+    }
+
     if (!g_renderer) return;
     
     float width = texture.width * scale;
@@ -1006,6 +1355,22 @@ void Renderer_DrawTextureEx(Texture2D texture, Vec2 position, float rotation, fl
 
 void Renderer_DrawTexturePro(Texture2D texture, Rect source, Rect dest, Vec2 origin, float rotation, Color tint)
 {
+    if (IsD2DBackend(g_renderer))
+    {
+        Rect dst_t = TransformRectForBackend(dest);
+        Vec2 o_t = { TransformLengthForBackend(origin.x), TransformLengthForBackend(origin.y) };
+        void* bmp = GetOrLoadD2DBitmap(&texture);
+        if (bmp)
+        {
+            D2DRenderer_DrawBitmap((D2DRenderer*)g_renderer->backend_ctx, bmp, source, dst_t, o_t, rotation, tint);
+        }
+        else
+        {
+            Renderer_DrawRectangle(dest, tint);
+        }
+        return;
+    }
+
     if (!g_renderer) return;
     
     float u1 = source.x / texture.width;
@@ -1442,6 +1807,14 @@ static void DrawTextPass(const char* text, float x, float y, float fontSize, Col
 
 void Renderer_DrawTextEx(const char* text, float x, float y, float fontSize, Color color, TextStyle style)
 {
+    if (IsD2DBackend(g_renderer))
+    {
+        Vec2 p = TransformPointForBackend((Vec2){x, y});
+        float size = TransformLengthForBackend(fontSize);
+        D2DRenderer_DrawText((D2DRenderer*)g_renderer->backend_ctx, text, p.x, p.y, size, color, style);
+        return;
+    }
+
     if (!text)
     {
         return;

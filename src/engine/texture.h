@@ -11,6 +11,8 @@ typedef struct Texture2D
     unsigned int id;
     int width;
     int height;
+    void* native_handle;
+    char path[260];
 } Texture2D;
 
 #ifdef __cplusplus

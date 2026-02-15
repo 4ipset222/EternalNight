@@ -9,6 +9,18 @@ void BeginCameraMode(Camera2D camera)
 {
     if (g_in_camera_mode) return;
     g_in_camera_mode = 1;
+    if (g_renderer)
+    {
+        g_renderer->camera_mode = 1;
+        g_renderer->camera_x = camera.x;
+        g_renderer->camera_y = camera.y;
+        g_renderer->camera_zoom = camera.zoom;
+    }
+
+    if (!g_renderer || Renderer_GetBackend(g_renderer) != RENDERER_BACKEND_OPENGL)
+    {
+        return;
+    }
 
     float zoom = camera.zoom;
     float width = (float)g_renderer->width / zoom;
@@ -40,6 +52,18 @@ void EndCameraMode(void)
 {
     if (!g_in_camera_mode) return;
     g_in_camera_mode = 0;
+    if (g_renderer)
+    {
+        g_renderer->camera_mode = 0;
+        g_renderer->camera_x = 0.0f;
+        g_renderer->camera_y = 0.0f;
+        g_renderer->camera_zoom = 1.0f;
+    }
+
+    if (!g_renderer || Renderer_GetBackend(g_renderer) != RENDERER_BACKEND_OPENGL)
+    {
+        return;
+    }
 
     float left = 0.0f;
     float right = (float)g_renderer->width;

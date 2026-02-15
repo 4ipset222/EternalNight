@@ -21,6 +21,7 @@ add_library(forge SHARED
     src/engine/timer.c
     src/engine/worldgen.c
     src/engine/storage.c
+    src/engine/renderer_d2d.cpp
 )
 
 if(WIN32)
@@ -40,6 +41,16 @@ target_link_libraries(forge PUBLIC
     PNG::PNG
     Freetype::Freetype
 )
+
+if(WIN32)
+    target_link_libraries(forge PUBLIC
+        d2d1
+        dwrite
+        dxguid
+        windowscodecs
+        ole32
+    )
+endif()
 
 add_library(NETWORK STATIC
     src/net/client.c

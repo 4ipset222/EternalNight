@@ -115,6 +115,10 @@ int main(int argc, char** argv)
     float cycleTimer = 0.0f;
     float autoSaveTimer = 0.0f;
     bool pauseMenuOpen = false;
+    bool pendingRendererSwitch = false;
+    RendererBackend pendingBackend = Renderer_GetBackend(renderer);
+    float rendererNoticeTimer = 0.0f;
+    char rendererNotice[96] = "";
 
     static float uiX = 10.0f;
     static float uiY = 10.0f;
@@ -130,6 +134,7 @@ int main(int argc, char** argv)
 
         if (currentGameState == STATE_MENU || currentGameState == STATE_NEW_GAME || currentGameState == STATE_LOAD_GAME)
         {
+            Renderer_BeginFrame(renderer);
             mainMenu.Update();
             GameState newState = mainMenu.GetGameState();
             
@@ -203,6 +208,12 @@ int main(int argc, char** argv)
         bool multiplayerActive = (mpMode != MpMode::None);
         if (Input_IsKeyPressed(KEY_ESCAPE))
             pauseMenuOpen = !pauseMenuOpen;
+        if (Input_IsKeyPressed(KEY_F10))
+        {
+            RendererBackend current = Renderer_GetBackend(renderer);
+            pendingBackend = (current == RENDERER_BACKEND_OPENGL) ? RENDERER_BACKEND_DIRECT2D : RENDERER_BACKEND_OPENGL;
+            pendingRendererSwitch = true;
+        }
         bool singleplayerPaused = pauseMenuOpen && !multiplayerActive;
 
         if (currentGameState == STATE_PLAYING && mpMode == MpMode::None)
@@ -548,7 +559,7 @@ int main(int argc, char** argv)
             Renderer_DrawRectangle(Rect{0.0f, 0.0f, (float)renderer->width, (float)renderer->height},
                                   Color{0.0f, 0.0f, 0.0f, 0.55f});
             float panelW = 320.0f;
-            float panelH = 280.0f;
+            float panelH = 342.0f;
             float panelX = ((float)renderer->width - panelW) * 0.5f;
             float panelY = ((float)renderer->height - panelH) * 0.5f;
             Renderer_DrawRectangle(Rect{panelX, panelY, panelW, panelH}, Color{0.10f, 0.10f, 0.12f, 0.95f});
@@ -584,11 +595,43 @@ int main(int argc, char** argv)
                                    Color{0.75f, 0.75f, 0.8f, 1.0f}, TEXT_STYLE_NORMAL);
             }
 
-            if (DrawPauseButton(panelX + 40.0f, panelY + 222.0f, 240.0f, 40.0f, "Exit To Menu", true))
+            char backendBtnText[64];
+            snprintf(backendBtnText, sizeof(backendBtnText), "Renderer: %s", Renderer_GetBackendName(Renderer_GetBackend(renderer)));
+            if (DrawPauseButton(panelX + 40.0f, panelY + 230.0f, 240.0f, 40.0f, backendBtnText, true))
+            {
+                RendererBackend current = Renderer_GetBackend(renderer);
+                pendingBackend = (current == RENDERER_BACKEND_OPENGL) ? RENDERER_BACKEND_DIRECT2D : RENDERER_BACKEND_OPENGL;
+                pendingRendererSwitch = true;
+            }
+            Renderer_DrawTextEx("F10: quick switch renderer", panelX + 56.0f, panelY + 276.0f, 14.0f,
+                               Color{0.75f, 0.75f, 0.8f, 1.0f}, TEXT_STYLE_NORMAL);
+
+            if (DrawPauseButton(panelX + 40.0f, panelY + 296.0f, 240.0f, 40.0f, "Exit To Menu", true))
                 exitToMenuNow = true;
         }
 
+        if (rendererNoticeTimer > 0.0f)
+        {
+            rendererNoticeTimer -= dt;
+            Renderer_DrawTextEx(rendererNotice, 20.0f, 20.0f, 18.0f, Color{1.0f, 0.95f, 0.6f, 1.0f}, TEXT_STYLE_OUTLINE_SHADOW);
+        }
+
         Renderer_EndFrame(renderer);
+
+        if (pendingRendererSwitch)
+        {
+            pendingRendererSwitch = false;
+            bool switched = Renderer_SetBackend(renderer, pendingBackend) != 0;
+            if (switched)
+            {
+                snprintf(rendererNotice, sizeof(rendererNotice), "Renderer switched to %s", Renderer_GetBackendName(pendingBackend));
+            }
+            else
+            {
+                snprintf(rendererNotice, sizeof(rendererNotice), "Failed to switch renderer to %s", Renderer_GetBackendName(pendingBackend));
+            }
+            rendererNoticeTimer = 2.5f;
+        }
 
         if (exitToMenuNow)
         {
@@ -631,7 +674,8 @@ int main(int argc, char** argv)
         }
 
         char buffer[256];
-        snprintf(buffer, sizeof(buffer), "Eternal Night - FPS: %.2f", GetFPS());
+        snprintf(buffer, sizeof(buffer), "Eternal Night - %s - FPS: %.2f",
+                 Renderer_GetBackendName(Renderer_GetBackend(renderer)), GetFPS());
         Window_SetTitle(window, buffer);
     }
 

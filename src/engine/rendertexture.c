@@ -1,5 +1,6 @@
 #include "rendertexture.h"
 #include "renderer.h"
+#include "forgesystem.h"
 #include <stdlib.h>
 #include <stdio.h>
 
@@ -11,6 +12,10 @@ RenderTexture LoadRenderTexture(int width, int height)
     RenderTexture rt = {0};
     rt.width = width;
     rt.height = height;
+    if (!g_renderer || Renderer_GetBackend(g_renderer) != RENDERER_BACKEND_OPENGL)
+    {
+        return rt;
+    }
 
     glGenTextures(1, &rt.texture.id);
     glBindTexture(GL_TEXTURE_2D, rt.texture.id);
@@ -50,6 +55,11 @@ RenderTexture LoadRenderTexture(int width, int height)
 
 void UnloadRenderTexture(RenderTexture rt)
 {
+    if (!g_renderer || Renderer_GetBackend(g_renderer) != RENDERER_BACKEND_OPENGL)
+    {
+        return;
+    }
+
     glDeleteFramebuffers(1, &rt.framebuffer);
     glDeleteRenderbuffers(1, &rt.renderbuffer);
     glDeleteTextures(1, &rt.texture.id);
@@ -59,6 +69,11 @@ void UnloadRenderTexture(RenderTexture rt)
 
 void BeginTextureMode(RenderTexture rt)
 {
+    if (!g_renderer || Renderer_GetBackend(g_renderer) != RENDERER_BACKEND_OPENGL)
+    {
+        return;
+    }
+
     glGetIntegerv(GL_FRAMEBUFFER_BINDING, &g_default_framebuffer);
     glGetIntegerv(GL_VIEWPORT, g_default_viewport);
 
@@ -71,6 +86,11 @@ void BeginTextureMode(RenderTexture rt)
 
 void EndTextureMode(void)
 {
+    if (!g_renderer || Renderer_GetBackend(g_renderer) != RENDERER_BACKEND_OPENGL)
+    {
+        return;
+    }
+
     glBindFramebuffer(GL_FRAMEBUFFER, g_default_framebuffer);
     glViewport(g_default_viewport[0], g_default_viewport[1], g_default_viewport[2], g_default_viewport[3]);
 }

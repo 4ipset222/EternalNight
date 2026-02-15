@@ -18,6 +18,12 @@ typedef struct Renderer
     Window* window;
     int width;
     int height;
+    int backend;
+    void* backend_ctx;
+    int camera_mode;
+    float camera_x;
+    float camera_y;
+    float camera_zoom;
     
     Shader primitive_shader;
     Shader texture_shader;
@@ -73,6 +79,12 @@ typedef enum TextStyle
     TEXT_STYLE_OUTLINE_SHADOW = 3
 } TextStyle;
 
+typedef enum RendererBackend
+{
+    RENDERER_BACKEND_OPENGL = 0,
+    RENDERER_BACKEND_DIRECT2D = 1
+} RendererBackend;
+
 Texture2D* LoadTexture(const char* path);
 void UnloadTexture(Texture2D* texture);
 
@@ -81,6 +93,9 @@ Renderer* GetGlobalRenderer(void);
 
 Renderer* Renderer_Create(Window* window);
 void      Renderer_Destroy(Renderer* r);
+int       Renderer_SetBackend(Renderer* r, RendererBackend backend);
+RendererBackend Renderer_GetBackend(const Renderer* r);
+const char* Renderer_GetBackendName(RendererBackend backend);
 
 void Renderer_BeginFrame(Renderer* r);
 void Renderer_EndFrame(Renderer* r);
